@@ -1,0 +1,82 @@
+{
+  "name": "rag-evaluation-system",
+  "version": "0.1.0",
+  "description": "A comprehensive framework for evaluating RAG retrieval pipelines",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./embedders/openai": {
+      "import": "./dist/embedders/openai.js",
+      "types": "./dist/embedders/openai.d.ts"
+    },
+    "./vector-stores/chroma": {
+      "import": "./dist/vector-stores/chroma.js",
+      "types": "./dist/vector-stores/chroma.d.ts"
+    },
+    "./rerankers/cohere": {
+      "import": "./dist/rerankers/cohere.js",
+      "types": "./dist/rerankers/cohere.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "rag",
+    "evaluation",
+    "retrieval",
+    "llm",
+    "langsmith",
+    "typescript"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint src tests",
+    "lint:fix": "eslint src tests --fix",
+    "format": "prettier --write src tests",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "zod": "^3.23"
+  },
+  "peerDependencies": {
+    "langsmith": ">=0.1.0"
+  },
+  "peerDependenciesMeta": {
+    "langsmith": {
+      "optional": true
+    }
+  },
+  "optionalDependencies": {
+    "chromadb": ">=1.8",
+    "cohere-ai": ">=7.0",
+    "openai": ">=4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.1.0",
+    "@vitest/coverage-v8": "^1.6",
+    "eslint": "^9.0",
+    "langsmith": ">=0.1.0",
+    "prettier": "^3.2",
+    "tsup": "^8.0",
+    "typescript": "^5.4",
+    "typescript-eslint": "^8.0",
+    "vitest": "^1.6"
+  }
+}
