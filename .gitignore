@@ -4,3 +4,6 @@ coverage/
 .env
 *.tgz
 .DS_Store
+
+
+data/
