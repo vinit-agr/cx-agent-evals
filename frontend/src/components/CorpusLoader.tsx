@@ -68,41 +68,43 @@ export function CorpusLoader({
         <label className="block text-xs text-text-dim uppercase tracking-wider mb-2">
           Corpus folder path
         </label>
-        <div className="flex gap-2">
+        <div className="space-y-2">
           <input
             type="text"
             value={folderPath}
             onChange={(e) => setFolderPath(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleLoad()}
             placeholder="/path/to/your/markdown/docs"
-            className="flex-1 bg-bg-surface border border-border rounded px-3 py-2 text-sm text-text
+            className="w-full bg-bg-surface border border-border rounded px-3 py-2 text-sm text-text
                        placeholder:text-text-dim/40 focus:outline-none focus:border-accent/50
                        transition-colors"
           />
-          <button
-            onClick={() => setBrowserOpen(true)}
-            className="px-3 py-2 bg-bg-surface border border-border rounded text-text-muted text-xs
-                       hover:border-accent/40 hover:text-accent transition-all cursor-pointer"
-            title="Browse folders"
-          >
-            Browse
-          </button>
-          <button
-            onClick={handleLoad}
-            disabled={loading || !folderPath.trim()}
-            className="px-4 py-2 bg-accent/10 border border-accent/30 rounded text-accent text-xs font-medium
-                       hover:bg-accent/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all
-                       cursor-pointer"
-          >
-            {loading ? (
-              <span className="flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
-                Loading
-              </span>
-            ) : (
-              "Load"
-            )}
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setBrowserOpen(true)}
+              className="flex-1 px-3 py-2 bg-bg-surface border border-border rounded text-text-muted text-xs
+                         hover:border-accent/40 hover:text-accent transition-all cursor-pointer"
+              title="Browse folders"
+            >
+              Browse
+            </button>
+            <button
+              onClick={handleLoad}
+              disabled={loading || !folderPath.trim()}
+              className="flex-1 px-4 py-2 bg-accent/10 border border-accent/30 rounded text-accent text-xs font-medium
+                         hover:bg-accent/20 disabled:opacity-30 disabled:cursor-not-allowed transition-all
+                         cursor-pointer"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
+                  Loading
+                </span>
+              ) : (
+                "Load"
+              )}
+            </button>
+          </div>
         </div>
         {error && (
           <p className="mt-2 text-xs text-error animate-fade-in">{error}</p>

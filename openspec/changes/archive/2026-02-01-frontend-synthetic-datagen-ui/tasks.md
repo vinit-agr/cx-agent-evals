@@ -56,8 +56,16 @@
 - [x] 8.4 On folder selection, populate the path input and auto-trigger corpus loading
 - [x] 8.5 Resolve relative paths in `/api/corpus/load` by joining with `process.cwd()` so relative paths work too
 
-## 9. Polish and Integration
+## 9. Bug Fixes
 
-- [x] 7.1 Add loading states and error boundaries throughout
-- [x] 7.2 Test full flow: mode selection → folder load → configure → generate → inspect results
-- [x] 7.3 Add brief instructions/placeholder text guiding the user through each step
+- [x] 9.1 Fix `matchesGlob` in library — `**/` pattern now uses `(.*/)?` regex so root-level `.md` files match `**/*.md`
+- [x] 9.2 Add `path.resolve()` and `stat()` check in `/api/corpus/load` — resolve relative paths, show resolved path in error messages
+- [x] 9.3 Fix FolderBrowser modal z-index — bump to `z-[60]` and position below header with `top-14` so it isn't occluded
+- [x] 9.4 Fix CorpusLoader layout — stack input on top, Browse/Load buttons below side-by-side to fit narrow sidebar
+- [x] 9.5 Fix DocumentViewer overflow — add `min-w-0 overflow-hidden` to right pane, `break-all` on pre element to prevent horizontal scroll
+
+## 10. Polish and Integration
+
+- [x] 10.1 Add loading states and error boundaries throughout
+- [x] 10.2 Test full flow: mode selection → folder load → configure → generate → inspect results
+- [x] 10.3 Add brief instructions/placeholder text guiding the user through each step

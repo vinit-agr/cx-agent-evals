@@ -85,11 +85,12 @@ async function collectFiles(
 
 function matchesGlob(filePath: string, pattern: string): boolean {
   // Simple glob matching: support ** and *
+  // Replace **/ with optional directory prefix so it matches root-level files too
   const regexStr = pattern
     .replace(/\./g, "\\.")
-    .replace(/\*\*/g, "{{GLOBSTAR}}")
-    .replace(/\*/g, "[^/]*")
-    .replace(/\{\{GLOBSTAR\}\}/g, ".*");
+    .replace(/\*\*\//g, "(.*/)?")
+    .replace(/\*\*/g, ".*")
+    .replace(/\*/g, "[^/]*");
   return new RegExp(`^${regexStr}$`).test(filePath);
 }
 

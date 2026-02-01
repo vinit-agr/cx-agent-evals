@@ -151,7 +151,7 @@ export default function Home() {
     <div className="flex flex-col h-screen">
       <Header mode={mode} onReset={handleReset} />
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 overflow-hidden max-w-full">
         {/* Left sidebar: corpus + config */}
         <div className="w-80 flex-shrink-0 border-r border-border bg-bg-elevated overflow-y-auto">
           <div className="p-4 space-y-6">
@@ -192,7 +192,7 @@ export default function Home() {
         )}
 
         {/* Right: document viewer */}
-        <div className="flex-1 bg-bg">
+        <div className="flex-1 min-w-0 bg-bg overflow-hidden">
           <DocumentViewer doc={selectedDoc} question={selectedQ} mode={mode} />
         </div>
       </div>

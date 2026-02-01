@@ -74,8 +74,8 @@ export function FolderBrowser({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="w-full max-w-xl bg-bg-elevated border border-border rounded-lg shadow-2xl flex flex-col max-h-[70vh]">
+    <div className="fixed inset-0 top-14 z-[60] flex items-start justify-center pt-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+      <div className="w-full max-w-xl bg-bg-elevated border border-border rounded-lg shadow-2xl flex flex-col max-h-[calc(100vh-5rem)]">
         {/* Header */}
         <div className="px-4 py-3 border-b border-border flex items-center justify-between">
           <span className="text-xs text-text-dim uppercase tracking-wider">

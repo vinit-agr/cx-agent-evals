@@ -58,6 +58,14 @@ The frontend's `package.json` references the library via `"rag-evaluation-system
 
 For chunk-level: highlight the entire chunk text in the document using `<mark>` elements with distinct background colors. For token-level: highlight exact character spans using start/end offsets to wrap the corresponding substring in `<mark>` elements.
 
+### Decision 8: Path resolution for corpus loading
+
+The `/api/corpus/load` endpoint resolves folder paths using `path.resolve()` before passing to `corpusFromFolder`. This allows both absolute and relative paths. The endpoint validates the directory exists with `stat()` before attempting to read, and includes the resolved path in error messages for debuggability.
+
+### Decision 9: Library glob matching fix
+
+The library's `matchesGlob` function was fixed to handle `**/` patterns correctly. The `**/` prefix is converted to `(.*/)?` regex (optional directory prefix) instead of `.*/` (required directory prefix), so root-level files like `foo.md` match the pattern `**/*.md`.
+
 ## Risks / Trade-offs
 
 - **[Risk] LLM API key required** → The UI will show a clear error if `OPENAI_API_KEY` is not set, with instructions to set it.

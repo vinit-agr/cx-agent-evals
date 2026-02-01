@@ -7,9 +7,17 @@ The API SHALL accept a JSON body `{ folderPath: string }` and return the loaded 
 - **WHEN** POST `/api/corpus/load` with `{ "folderPath": "/path/to/docs" }`
 - **THEN** response is 200 with the list of documents found
 
+#### Scenario: Relative folder path
+- **WHEN** POST `/api/corpus/load` with `{ "folderPath": "data/docs" }`
+- **THEN** the API resolves the path relative to `process.cwd()` using `path.resolve()` and loads from the absolute path
+
 #### Scenario: Invalid folder path
 - **WHEN** POST `/api/corpus/load` with a non-existent path
-- **THEN** response is 400 with `{ "error": "Folder not found or contains no markdown files" }`
+- **THEN** response is 400 with `{ "error": "Directory not found: <resolved-path>" }` showing the resolved absolute path
+
+#### Scenario: Folder exists but has no markdown files
+- **WHEN** POST `/api/corpus/load` with a valid directory containing no `.md` files
+- **THEN** response is 400 with `{ "error": "No markdown files found in: <resolved-path>" }`
 
 ### Requirement: POST /api/generate endpoint with SSE streaming
 The API SHALL accept generation parameters and stream results via Server-Sent Events. Request body: `{ folderPath: string, mode: "chunk" | "token", questionsPerDoc: number, chunkSize?: number, chunkOverlap?: number }`. Each SSE event SHALL contain one generated question with its relevant chunks or spans.

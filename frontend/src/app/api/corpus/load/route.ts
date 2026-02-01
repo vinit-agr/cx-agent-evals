@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolve } from "node:path";
+import { stat } from "node:fs/promises";
 import { corpusFromFolder } from "rag-evaluation-system";
 
 export async function POST(request: NextRequest) {
@@ -14,11 +15,21 @@ export async function POST(request: NextRequest) {
     }
 
     const resolvedPath = resolve(folderPath);
+
+    // Check directory exists before attempting to read
+    const dirStat = await stat(resolvedPath).catch(() => null);
+    if (!dirStat || !dirStat.isDirectory()) {
+      return NextResponse.json(
+        { error: `Directory not found: ${resolvedPath}` },
+        { status: 400 },
+      );
+    }
+
     const corpus = await corpusFromFolder(resolvedPath, "**/*.md");
 
     if (corpus.documents.length === 0) {
       return NextResponse.json(
-        { error: "Folder not found or contains no markdown files" },
+        { error: `No markdown files found in: ${resolvedPath}` },
         { status: 400 },
       );
     }

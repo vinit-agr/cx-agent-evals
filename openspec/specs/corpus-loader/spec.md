@@ -11,8 +11,15 @@ The UI SHALL provide a text input where the user enters an absolute folder path.
 - **WHEN** user enters a path that does not exist or contains no markdown files
 - **THEN** the system displays an error message indicating no documents were found
 
+### Requirement: Corpus loader layout
+The corpus loader controls SHALL be laid out to fit within a narrow sidebar. The folder path input SHALL take full width, with Browse and Load buttons stacked below it side-by-side. This prevents button overflow in constrained layouts.
+
+#### Scenario: Buttons visible in narrow sidebar
+- **WHEN** the corpus loader is rendered in a 320px sidebar
+- **THEN** the input, Browse, and Load buttons are all fully visible without overflow
+
 ### Requirement: Folder browser UI
-The UI SHALL provide a "Browse" button next to the folder path input. Clicking it SHALL open a modal or inline panel that displays the server filesystem as a navigable directory tree. The user SHALL be able to click into directories and see their contents (subdirectories and `.md` files). A "Select" button SHALL confirm the current directory as the corpus folder path and populate the text input. The browser SHALL show the current path as a breadcrumb for easy navigation up the tree.
+The UI SHALL provide a "Browse" button next to the folder path input. Clicking it SHALL open a modal or inline panel that displays the server filesystem as a navigable directory tree. The modal SHALL render above the sticky header (z-index higher than header) and be positioned below the header bar so it is not occluded. The user SHALL be able to click into directories and see their contents (subdirectories and `.md` files). A "Select" button SHALL confirm the current directory as the corpus folder path and populate the text input. The browser SHALL show the current path as a breadcrumb for easy navigation up the tree.
 
 #### Scenario: Open folder browser
 - **WHEN** user clicks the "Browse" button

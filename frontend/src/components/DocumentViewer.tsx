@@ -152,7 +152,7 @@ export function DocumentViewer({
         </div>
       )}
 
-      <div ref={containerRef} className="flex-1 overflow-y-auto p-4">
+      <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4">
         {question && (
           <div className="mb-4 pb-3 border-b border-border/50 animate-fade-in">
             <span className="text-[10px] text-text-dim uppercase tracking-wider block mb-1">
@@ -164,7 +164,7 @@ export function DocumentViewer({
           </div>
         )}
 
-        <pre className="text-xs text-text-muted leading-[1.8] whitespace-pre-wrap break-words font-[inherit]">
+        <pre className="text-xs text-text-muted leading-[1.8] whitespace-pre-wrap break-all font-[inherit] max-w-full overflow-hidden">
           {renderHighlightedText(doc.content, highlights)}
         </pre>
       </div>

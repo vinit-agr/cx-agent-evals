@@ -35,3 +35,14 @@ When a question is selected and highlights are rendered, the document view SHALL
 #### Scenario: Auto-scroll to highlight
 - **WHEN** user selects a question whose first relevant span is deep in a long document
 - **THEN** the document viewer scrolls so the first highlight is visible
+
+### Requirement: Document viewer fixed width
+The document viewer pane SHALL maintain a constant width regardless of content. Long text and URLs SHALL wrap within the pane using word-break. The viewer SHALL NOT cause horizontal scrolling or push the left sidebars off-screen.
+
+#### Scenario: Long unbroken text in document
+- **WHEN** a document contains long URLs or unbroken strings
+- **THEN** the text wraps within the viewer pane and no horizontal scrollbar appears
+
+#### Scenario: Sidebar stability on question selection
+- **WHEN** user clicks different questions with varying content lengths
+- **THEN** the left sidebar panels (corpus loader, question list) remain at their fixed widths without shifting
