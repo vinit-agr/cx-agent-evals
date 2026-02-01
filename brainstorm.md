@@ -105,7 +105,7 @@ TypeScript doesn't have `NewType` like Python, but we can use **branded types** 
  * Utility for creating nominal/branded types.
  * Prevents mixing up string types at compile time.
  */
-type Brand<K, T> = T & { __brand: K };
+type Brand<K, T> = T & { readonly __brand: K };
 
 // =============================================================================
 // PRIMITIVE TYPE ALIASES (Branded)
@@ -579,7 +579,7 @@ class ChunkRecall implements ChunkLevelMetric {
   readonly name = "chunk_recall";
 
   calculate(retrievedChunkIds: ChunkId[], groundTruthChunkIds: ChunkId[]): number {
-    if (groundTruthChunkIds.length === 0) return 0.0;
+    if (groundTruthChunkIds.length === 0) return 1.0; // Nothing to recall => trivially satisfied
     const retrieved = new Set(retrievedChunkIds);
     const gt = new Set(groundTruthChunkIds);
     const intersection = [...gt].filter((id) => retrieved.has(id));
@@ -628,7 +628,7 @@ function mergeOverlappingSpans(spans: CharacterSpan[]): CharacterSpan[] {
 
   const merged: CharacterSpan[] = [];
 
-  for (const [docId, docSpans] of byDoc) {
+  for (const [_docId, docSpans] of byDoc) {
     const sorted = [...docSpans].sort((a, b) => a.start - b.start);
     let current = sorted[0];
 
@@ -670,9 +670,10 @@ class SpanRecall implements TokenLevelMetric {
   readonly name = "span_recall";
 
   calculate(retrievedSpans: CharacterSpan[], groundTruthSpans: CharacterSpan[]): number {
-    if (groundTruthSpans.length === 0) return 0.0;
+    if (groundTruthSpans.length === 0) return 1.0; // Nothing to recall => trivially satisfied
     const mergedGt = mergeOverlappingSpans(groundTruthSpans);
     const totalGtChars = mergedGt.reduce((sum, s) => sum + spanLength(s), 0);
+    if (totalGtChars === 0) return 1.0;
     const overlap = calculateOverlap(retrievedSpans, groundTruthSpans);
     return Math.min(overlap / totalGtChars, 1.0);
   }
@@ -971,3 +972,209 @@ const result = await evaluation.run({
 **Recommendation**:
 - Use **Token-Level** as the primary approach for comparing chunking strategies
 - Use **Chunk-Level** when you need simpler setup and don't need fine-grained metrics
+
+---
+
+## Senior Engineer Review Notes
+
+> Reviewed 2026-01-30. These notes cover type system design, algorithmic correctness, API ergonomics, and missing abstractions in the brainstorm document.
+
+### Inline Fixes Applied
+
+1. **`Brand` type should use `readonly __brand`.** Changed `{ __brand: K }` to `{ readonly __brand: K }`. Without `readonly`, calling code could theoretically assign to `__brand` and defeat the branding. Minor but principled.
+
+2. **`ChunkRecall` and `SpanRecall` returned `0.0` for empty ground truth.** If there is nothing to recall, recall is trivially 1.0 (vacuous truth). Changed to `return 1.0`. This matches the convention used in standard IR literature. The `ChunkF1` class composes recall and precision, so it automatically benefits from this fix.
+
+3. **`SpanRecall` did not guard against `totalGtChars === 0`.** After merging, all spans could collapse to zero-length spans (e.g., `start === end`). Added a `totalGtChars === 0` guard returning `1.0`.
+
+4. **`mergeOverlappingSpans` unused `docId` loop variable.** The `for (const [docId, docSpans] of byDoc)` destructured `docId` but never used it (the merged spans already carry their own `docId`). Renamed to `_docId` to signal intent. In implementation, use `_` prefix or omit.
+
+### Type System Design
+
+5. **`Brand` utility should use `unique symbol` for stronger nominal typing.** The current `Brand<K, T> = T & { readonly __brand: K }` approach uses a string literal for `K`. Two separately declared brands with the same string key would be structurally compatible. The stronger pattern:
+    ```typescript
+    declare const __brand: unique symbol;
+    type Brand<K extends string, T> = T & { readonly [__brand]: K };
+    ```
+    This prevents accidental structural compatibility while keeping the ergonomics.
+
+6. **`ChunkId` and `PositionAwareChunkId` are unrelated branded types, but `ChunkId` values might need to map to `PositionAwareChunkId` during evaluation.** The brainstorm does not define a mapping function. The implementation plan's `String(c.id).replace("pa_chunk_", "chunk_")` hack (noted as fragile in that review) originates from this gap. Add an explicit `chunkIdFromPaChunkId(id: PositionAwareChunkId): ChunkId` utility, or better, store the logical `ChunkId` as metadata on `PositionAwareChunk`.
+
+7. **`metadata: Record<string, unknown>` on every type is convenient but untyped.** Consider making it generic: `interface Document<M extends Record<string, unknown> = Record<string, unknown>>` so consumers can narrow metadata types when needed. This avoids littering the codebase with type assertions.
+
+8. **`EvaluationType` is defined but never structurally connected to the type system.** It is a plain union `"chunk-level" | "token-level"` but nothing in the type definitions enforces that chunk-level code cannot use token-level types or vice versa. Consider a discriminated union approach:
+    ```typescript
+    type EvaluationConfig =
+      | { readonly type: "chunk-level"; readonly config: ChunkLevelEvaluationConfig }
+      | { readonly type: "token-level"; readonly config: TokenLevelEvaluationConfig };
+    ```
+    This would make it impossible to mix evaluation types at the orchestration layer.
+
+9. **`ChunkLevelDatasetExample` and `TokenLevelDatasetExample` lack `readonly` modifiers.** These types have mutable `inputs`, `outputs`, and `metadata` fields, inconsistent with every other type in the document which uses `readonly`. Make them consistent.
+
+10. **`LLMClient` interface is over-coupled to the OpenAI SDK shape.** It hard-codes `chat.completions.create` nesting. A simpler abstraction would be easier to implement for non-OpenAI providers:
+    ```typescript
+    interface LLMClient {
+      readonly name: string;
+      complete(params: {
+        model: string;
+        messages: ReadonlyArray<{ role: string; content: string }>;
+        responseFormat?: "json" | "text";
+      }): Promise<string>;
+    }
+    ```
+    Then provide an `openAIClientAdapter(client: OpenAI): LLMClient` function for OpenAI SDK users. This decouples the framework from any specific SDK.
+
+### Algorithm Correctness
+
+11. **`mergeOverlappingSpans` produces spans with `text: ""`.** This is flagged in the implementation plan review too. For metric computation, `text` is never read -- only `start`, `end`, and `docId` matter. Introduce a `SpanRange` type for internal metric calculations:
+    ```typescript
+    interface SpanRange {
+      readonly docId: DocumentId;
+      readonly start: number;
+      readonly end: number;
+    }
+    ```
+    Keep `CharacterSpan` (with `text`) at API boundaries. `mergeOverlappingSpans` should operate on and return `SpanRange[]`.
+
+12. **`calculateOverlap` is O(n*m) where n and m are the merged span counts.** For typical RAG workloads (tens of spans), this is fine. But if spans are all from the same document, a two-pointer sweep after sorting would be O(n log n + m log m), which is better for large span sets. Document the complexity or leave a note that optimization is possible.
+
+13. **`calculateOverlap` double-merges when called from `SpanRecall`/`SpanPrecision`.** `SpanRecall.calculate` calls `mergeOverlappingSpans(groundTruthSpans)` to compute `totalGtChars`, then calls `calculateOverlap(retrievedSpans, groundTruthSpans)` which internally merges both inputs again. This is wasteful. Refactor so metrics receive pre-merged spans, or have `calculateOverlap` accept already-merged inputs with a flag.
+
+14. **`spanOverlapChars` and `spanOverlaps` do not validate that `start < end`.** A zero-length or negative-length span would produce incorrect results. Add a `CharacterSpan` factory or validation function that enforces `start >= 0 && start <= end`. Use Zod at runtime boundaries.
+
+15. **`ChunkF1.calculate` instantiates new `ChunkRecall()` and `ChunkPrecision()` on every call.** This is wasteful allocation. Either inject the metric instances or make `ChunkRecall` and `ChunkPrecision` stateless module-level singletons. Better yet, make them plain functions rather than classes -- they have no state.
+
+### Adapter Pattern
+
+16. **`ChunkerPositionAdapter` fails silently on duplicate text.** If the same substring appears multiple times in a document and the chunker produces chunks in non-sequential order, `indexOf(chunkText, currentPos)` will find the wrong occurrence, and the fallback `indexOf(chunkText)` (from position 0) will always match the first occurrence. This corrupts position data without any warning. Mitigation: after the fallback match, verify that the matched region does not overlap with any already-assigned span. If it does, skip and warn.
+
+17. **`ChunkerPositionAdapter` has mutable state (`_skippedChunks`) but no reset mechanism.** If the adapter is reused across multiple documents (which `chunkWithPositions` implies -- it takes a single `Document`), the counter accumulates. Add a `resetStats()` method or make the counter per-call by returning it alongside the result:
+    ```typescript
+    chunkWithPositions(doc: Document): { chunks: PositionAwareChunk[]; skipped: number };
+    ```
+
+18. **`Chunker.chunk(text: string): string[]` loses document identity.** The `PositionAwareChunker.chunkWithPositions(doc: Document)` takes a `Document`, but `Chunker.chunk` takes raw `string`. The adapter bridges this, but any `Chunker` implementation that needs document metadata (e.g., to set chunk metadata) cannot access it. Consider `chunk(doc: Document): Chunk[]` instead, or at minimum `chunk(text: string, docId: DocumentId): Chunk[]`.
+
+### Synthetic Data Generation Design
+
+19. **No validation that LLM-generated spans actually exist in the source document.** The token-level generator presumably asks an LLM to identify relevant excerpts and return character positions. LLMs hallucinate positions. The generator must:
+    - Validate that `document.content.slice(span.start, span.end) === span.text`
+    - If the LLM returns text but no positions, use `indexOf` to find the text
+    - If the LLM returns positions but no text, extract and store the text
+    - Reject spans that fail validation
+
+20. **No deduplication of generated queries.** If `queriesPerDoc` is high, the LLM may generate semantically duplicate queries. Consider adding a dedup step (exact string match at minimum, embedding-based similarity for robustness).
+
+21. **No control over query difficulty or type distribution.** The `GenerateOptions` interface has `queriesPerDoc` but no way to specify distribution of query types (factoid, multi-hop, comparison, etc.) or difficulty levels. The LangSmith schema includes `difficulty` and `queryType` in metadata, suggesting this was intended but not exposed. Add:
+    ```typescript
+    interface GenerateOptions {
+      queriesPerDoc?: number;
+      queryTypes?: ReadonlyArray<"factoid" | "multi-hop" | "comparison" | "boolean">;
+      difficultyDistribution?: { easy: number; medium: number; hard: number };
+      // ...existing fields
+    }
+    ```
+
+22. **Token-level data generation needs a strategy for selecting relevant passages.** The brainstorm says "generates relevant excerpts directly from documents as character spans" but does not describe how. Two approaches:
+    - **LLM-driven**: Ask the LLM to read the document and identify relevant passages for a given query. Risk: LLM may return approximate text that does not exactly match.
+    - **Hybrid**: LLM generates the query and quotes the relevant text, then a post-processing step locates the exact spans via string matching. This is more reliable.
+    Document the chosen approach and its tradeoffs.
+
+### LangSmith Schema Design
+
+23. **No versioning field in the dataset examples.** The dataset names include `v1` but individual examples do not carry a schema version. If the schema evolves, there is no way to distinguish old examples from new ones within the same dataset. Add `schemaVersion: number` to metadata.
+
+24. **No `queryId` in the dataset example schema.** The `Query` type has an `id` field, but `ChunkLevelDatasetExample` and `TokenLevelDatasetExample` only store `query: QueryText` in inputs. This loses the query identity. If a query appears in multiple datasets or needs cross-referencing, the ID is needed. Store it in metadata at minimum.
+
+25. **Token-level schema stores `text` redundantly.** The `text` field in each span is derivable from `docId + start + end` given the corpus. Storing it is useful for validation and debugging but increases storage. This is the right tradeoff -- just document that `text` is authoritative and `start/end` must match.
+
+26. **No schema for evaluation run results in LangSmith.** The document defines `EvaluationResult` but does not specify how results are stored as LangSmith experiment feedback. Define the feedback key names and value formats to ensure consistency across runs.
+
+### API Design and Ergonomics
+
+27. **`TokenLevelRunOptions.chunker` accepts `Chunker | PositionAwareChunker` but the adapter wrapping is implicit.** This is convenient but hides a potential failure mode (the adapter may skip chunks). Make the wrapping explicit in docs, or better, return adapter diagnostics in `EvaluationResult`:
+    ```typescript
+    interface EvaluationResult {
+      metrics: Record<string, number>;
+      diagnostics?: {
+        skippedChunks?: number;
+        adapterUsed?: boolean;
+      };
+    }
+    ```
+
+28. **No way to provide a custom `PositionAwareChunker` for token-level evaluation.** `TokenLevelRunOptions.chunker` is typed as `Chunker | PositionAwareChunker`, which works via structural typing. But the interface section only mentions the adapter path. Clarify that users can implement `PositionAwareChunker` directly for best results.
+
+29. **`VectorStore.search` returns `PositionAwareChunk[]` without scores.** Rerankers and downstream logic may want retrieval scores. Consider:
+    ```typescript
+    interface ScoredChunk<T> {
+      readonly chunk: T;
+      readonly score: number;
+    }
+    search(queryEmbedding: number[], k: number): Promise<ScoredChunk<PositionAwareChunk>[]>;
+    ```
+
+30. **`Embedder.embed` and `embedQuery` are separate methods with no shared contract.** There is no guarantee that `embed(["hello"])[0]` equals `embedQuery("hello")`. Document that implementations must ensure consistency, or unify into a single method.
+
+### Comparison Table Accuracy
+
+31. **The comparison table is accurate but incomplete.** Missing rows:
+    - **Ground truth regeneration cost**: Chunk-level = must regenerate when chunker changes; Token-level = one-time cost
+    - **Metric value range**: Chunk-level = {0, 1/n, 2/n, ...} (discrete); Token-level = [0.0, 1.0] (continuous)
+    - **Position tracking overhead**: Chunk-level = none; Token-level = must track char offsets
+    - **Failure mode of adapter**: Chunk-level = N/A; Token-level = chunks not found in source text are silently dropped
+
+### TypeScript-Specific Improvements
+
+32. **Use `as const satisfies` for metric name literals.** Instead of `readonly name = "chunk_recall"`, use:
+    ```typescript
+    readonly name = "chunk_recall" as const;
+    ```
+    This narrows the type from `string` to the literal `"chunk_recall"`, enabling type-safe metric name lookups.
+
+33. **Consider a `MetricName` union type.** Derive metric names from the implementations:
+    ```typescript
+    type ChunkMetricName = "chunk_recall" | "chunk_precision" | "chunk_f1";
+    type SpanMetricName = "span_recall" | "span_precision" | "span_iou";
+    type MetricName = ChunkMetricName | SpanMetricName;
+    ```
+    Then type `EvaluationResult.metrics` as `Partial<Record<MetricName, number>>` instead of `Record<string, number>`.
+
+34. **Metrics should be plain functions, not classes.** `ChunkRecall`, `ChunkPrecision`, etc. carry no state. The class pattern adds ceremony (instantiation, `implements`) with no benefit. Use a function + name tuple:
+    ```typescript
+    interface NamedMetric<TArgs extends unknown[]> {
+      readonly name: string;
+      readonly calculate: (...args: TArgs) => number;
+    }
+
+    const chunkRecall: NamedMetric<[ChunkId[], ChunkId[]]> = {
+      name: "chunk_recall",
+      calculate: (retrieved, groundTruth) => { /* ... */ },
+    };
+    ```
+    This is more idiomatic TypeScript and eliminates the `new ChunkRecall()` allocation inside `ChunkF1`.
+
+35. **Use `ReadonlyArray` in function signatures that do not mutate.** `calculate(retrievedChunkIds: ChunkId[], ...)` should be `calculate(retrievedChunkIds: readonly ChunkId[], ...)`. The brainstorm uses `readonly` on interface properties but not on function parameter arrays.
+
+36. **`Embedder.embed` return type `number[][]` should be `ReadonlyArray<ReadonlyArray<number>>`.** Embeddings should not be mutated after creation. Same for `embedQuery` returning `number[]` -- prefer `readonly number[]`.
+
+37. **Consider generic `VectorStore<TChunk>` for chunk-level vs token-level.** This avoids the architectural issue (noted in item 7 of the implementation plan review) where chunk-level evaluation must fabricate `PositionAwareChunk` values:
+    ```typescript
+    interface VectorStore<T extends { readonly id: string; readonly content: string }> {
+      add(items: readonly T[], embeddings: ReadonlyArray<readonly number[]>): Promise<void>;
+      search(queryEmbedding: readonly number[], k: number): Promise<readonly T[]>;
+      clear(): Promise<void>;
+    }
+    ```
+
+38. **Use `using` / `Symbol.dispose` for vector store lifecycle.** Node 20+ supports explicit resource management. The vector store `clear()` method is a cleanup operation that should be called in a `finally` block. With `using`:
+    ```typescript
+    interface Disposable {
+      [Symbol.dispose](): void;
+    }
+    interface AsyncDisposable {
+      [Symbol.asyncDispose](): Promise<void>;
+    }
+    ```
+    Have `VectorStore` extend `AsyncDisposable` so consumers can write `await using store = new ChromaVectorStore()`.

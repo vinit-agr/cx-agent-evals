@@ -38,7 +38,7 @@ rag-evaluation-system/
 ├── tsconfig.json
 ├── tsup.config.ts
 ├── vitest.config.ts
-├── .eslintrc.cjs
+├── eslint.config.mjs
 ├── .prettierrc
 ├── .gitignore
 ├── README.md
@@ -201,8 +201,7 @@ rag-evaluation-system/
     "vitest": "^1.6",
     "@vitest/coverage-v8": "^1.6",
     "eslint": "^9.0",
-    "@typescript-eslint/eslint-plugin": "^7.0",
-    "@typescript-eslint/parser": "^7.0",
+    "typescript-eslint": "^8.0",
     "prettier": "^3.2",
     "langsmith": ">=0.1.0"
   }
@@ -263,7 +262,10 @@ export default defineConfig({
 
 ```typescript
 import { defineConfig } from "vitest/config";
-import path from "path";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   test: {
@@ -289,7 +291,7 @@ export default defineConfig({
 pnpm install
 
 # Install dev dependencies
-pnpm add -D typescript tsup vitest @vitest/coverage-v8 eslint prettier @typescript-eslint/eslint-plugin @typescript-eslint/parser
+pnpm add -D typescript tsup vitest @vitest/coverage-v8 eslint prettier typescript-eslint
 
 # Install core dependency
 pnpm add zod
@@ -767,17 +769,23 @@ export class OpenAIEmbedder implements Embedder {
     this.dimension = knownDims[this._model] ?? 1536;
 
     // Lazy-load OpenAI to keep it optional
+    // NOTE: Client must be provided OR initialized via static async factory.
+    // require() does not work in ESM. Use dynamic import instead.
     if (options.client) {
       this._client = options.client;
-    } else {
-      try {
-        const { default: OpenAI } = require("openai");
-        this._client = new OpenAI();
-      } catch {
-        throw new Error(
-          "OpenAI package required. Install with: pnpm add openai",
-        );
-      }
+    }
+  }
+
+  /**
+   * Factory for creating an OpenAIEmbedder without a pre-built client.
+   * Use this instead of relying on require() in ESM.
+   */
+  static async create(options: { model?: string } = {}): Promise<OpenAIEmbedder> {
+    try {
+      const { default: OpenAI } = await import("openai");
+      return new OpenAIEmbedder({ ...options, client: new OpenAI() });
+    } catch {
+      throw new Error("OpenAI package required. Install with: pnpm add openai");
     }
   }
 
@@ -983,10 +991,12 @@ export interface LLMClient {
 export abstract class SyntheticDatasetGenerator {
   protected _llm: LLMClient;
   protected _corpus: Corpus;
+  protected _model: string;
 
-  constructor(llmClient: LLMClient, corpus: Corpus) {
+  constructor(llmClient: LLMClient, corpus: Corpus, model = "gpt-4o") {
     this._llm = llmClient;
     this._corpus = corpus;
+    this._model = model;
   }
 
   get corpus(): Corpus {
@@ -995,7 +1005,7 @@ export abstract class SyntheticDatasetGenerator {
 
   protected async callLLM(systemPrompt: string, userPrompt: string): Promise<string> {
     const response = await this._llm.chat.completions.create({
-      model: "gpt-4",
+      model: this._model,
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
@@ -2145,3 +2155,138 @@ This implementation plan provides a comprehensive roadmap for building the RAG E
 6. **Async-First**: All I/O operations return Promises; evaluation pipelines are fully async
 
 The system enables fair comparison of RAG retrieval pipelines through standardized evaluation against LangSmith-stored ground truth datasets.
+
+---
+
+## Senior Engineer Review Notes
+
+> Reviewed 2026-01-30. These notes identify gaps, bugs, ambiguities, and improvements needed before implementation begins.
+
+### Critical Bugs to Fix During Implementation
+
+1. **Chunk-Level Generator `_buildChunkIndex` loses document association.** The `_chunkIndex` maps `chunkId -> content` but never records which document produced each chunk. Then `_generateQAPairs` always takes `.slice(0, 20)` of the full map instead of filtering to the current document's chunks. Fix: store `Map<string, { content: string; docId: DocumentId }>` and filter per-document inside the loop.
+
+2. **Chunk-Level Evaluation creates fake `PositionAwareChunk` with `docId: "unknown"` and `start: 0`.** This is a lossy conversion that breaks any vector store relying on metadata. The `_chunkCorpus` method should track the source document per chunk and produce proper position-aware chunks (or the VectorStore interface should accept plain `Chunk` for chunk-level eval -- see architectural note below).
+
+3. **Chunk ID round-tripping via string replace is fragile.** `String(c.id).replace("pa_chunk_", "chunk_")` assumes the prefix appears exactly once and at the start. Use a dedicated mapping or store the original `ChunkId` in metadata instead of string manipulation.
+
+4. **`_fuzzyFind` is a stub returning `-1`.** This means any LLM excerpt that is even slightly paraphrased silently produces no spans. Either implement a real sliding-window Levenshtein/Jaro-Winkler match, or at minimum do case-insensitive and whitespace-normalized search as a fallback before giving up.
+
+5. **`mergeOverlappingSpans` sets `text: ""` on merged spans.** This breaks the `CharacterSpanSchema` validation which requires `text.length === end - start`. Either remove that Zod refinement for internal computation spans, or introduce an `InternalSpan` type without the text field for metric calculations. Recommended: create a `SpanRange` type `{ docId, start, end }` for metric internals, keep `CharacterSpan` (with text) for API boundaries only.
+
+6. **OpenAI Embedder uses `require()` in an ESM project.** The project is `"type": "module"`. `require()` will fail at runtime. Use dynamic `await import("openai")` instead. Same issue in `ChromaVectorStore`, `CohereReranker`, and `langsmith/client.ts`.
+
+### Architectural Improvements
+
+7. **VectorStore interface forces `PositionAwareChunk` everywhere.** Chunk-level evaluation does not need position awareness. Consider a generic `VectorStore<T>` or have the chunk-level path use a simpler `ChunkVectorStore` interface that accepts `Chunk`. This avoids the fake position data hack in `ChunkLevelEvaluation`.
+
+8. **No cleanup of vector store after evaluation.** Both evaluation classes create/populate a vector store but never call `clear()`. Add cleanup in a `finally` block or use a disposable pattern (`Symbol.dispose` / `using` if targeting Node 20+).
+
+9. **No batching for embeddings.** `embedder.embed(chunkTexts)` sends all chunks in one call. OpenAI has a token limit per request. Add a `batchSize` option (default 100) and batch the calls. Same concern for `vectorStore.add()` -- Chroma has batch limits.
+
+10. **No rate limiting or retry logic.** LLM calls in synthetic data generation, embedding calls, and reranking calls can all fail transiently. Add a simple retry utility with exponential backoff. Consider `p-retry` or a minimal custom implementation.
+
+11. **Hardcoded `model: "gpt-4"` in `SyntheticDatasetGenerator.callLLM`.** The model should be configurable via constructor options, defaulting to `"gpt-4o"` (newer, cheaper, faster). Add a `model` field to `LLMClient` options or the generator constructor.
+
+12. **No progress reporting.** Generating synthetic data and running evaluations can take minutes. Add an optional `onProgress?: (event: ProgressEvent) => void` callback to `GenerateOptions` and `RunOptions`.
+
+### Missing Pieces for Implementation
+
+13. **ESLint config is `.eslintrc.cjs` but ESLint 9 uses flat config (`eslint.config.mjs`).** The plan specifies `eslint: "^9.0"` with `@typescript-eslint/eslint-plugin: "^7.0"`. ESLint 9 dropped `.eslintrc` support. Use `eslint.config.mjs` with `typescript-eslint` v8+ flat config. Update devDependencies:
+    ```json
+    "eslint": "^9.0",
+    "typescript-eslint": "^8.0",
+    ```
+    Remove `@typescript-eslint/eslint-plugin` and `@typescript-eslint/parser` (merged into `typescript-eslint` in v8).
+
+14. **No `.env` handling.** OpenAI, Cohere, LangSmith all need API keys. Document required env vars (`OPENAI_API_KEY`, `COHERE_API_KEY`, `LANGCHAIN_API_KEY`) and add `dotenv` as an optional dependency or document that users handle env themselves.
+
+15. **No logging abstraction.** Code uses `console.warn` directly. Add a minimal logger interface so consumers can plug in their own (pino, winston, etc.) or silence warnings in tests:
+    ```typescript
+    interface Logger {
+      warn(message: string): void;
+      info(message: string): void;
+      debug(message: string): void;
+    }
+    ```
+
+16. **`corpusFromFolder` is unimplemented.** This is the primary entry point for users. Provide the implementation using `node:fs/promises` `readdir` with recursive option (Node 18.17+). Do not use `glob` from `node:fs/promises` (that is Node 22+ only). Use `fast-glob` as a dependency or simple recursive readdir.
+
+17. **No subpath exports in `package.json`.** The plan mentions optional implementations imported via `"rag-evaluation-system/embedders/openai"` but the `exports` field only has `"."`. Add:
+    ```json
+    "exports": {
+      ".": { "import": "./dist/index.js", "require": "./dist/index.cjs", "types": "./dist/index.d.ts" },
+      "./embedders/openai": { "import": "./dist/embedders/openai.js", "types": "./dist/embedders/openai.d.ts" },
+      "./vector-stores/chroma": { "import": "./dist/vector-stores/chroma.js", "types": "./dist/vector-stores/chroma.d.ts" },
+      "./rerankers/cohere": { "import": "./dist/rerankers/cohere.js", "types": "./dist/rerankers/cohere.d.ts" }
+    }
+    ```
+    And update `tsup.config.ts` to have multiple entry points.
+
+18. **`tsconfig.json` paths alias `@/*` requires tsup path resolution.** tsup does not resolve TypeScript path aliases by default. Either remove the alias and use relative imports, or add `tsup-plugin-resolve-alias` / configure esbuild aliases in `tsup.config.ts`.
+
+19. **Missing `Zod` schemas for ground truth and results.** Only `DocumentSchema`, `CorpusSchema`, and `CharacterSpanSchema` are defined. Add schemas for `ChunkLevelDatasetExample` and `TokenLevelDatasetExample` to validate data loaded from LangSmith.
+
+### Testing Gaps
+
+20. **No tests for LangSmith integration.** Add unit tests with a mock LangSmith client (inject via constructor or module mock). Test upload serialization and load deserialization round-trips.
+
+21. **No tests for the evaluation orchestrators.** These are the most complex classes. Add integration tests with in-memory vector store mock, mock embedder, and fixture ground truth data -- no real API calls needed.
+
+22. **Add an `InMemoryVectorStore` for testing.** Brute-force cosine similarity. This eliminates the Chroma dependency from the test suite and makes CI simpler:
+    ```typescript
+    export class InMemoryVectorStore implements VectorStore {
+      readonly name = "InMemory";
+      private _chunks: PositionAwareChunk[] = [];
+      private _embeddings: number[][] = [];
+
+      async add(chunks: PositionAwareChunk[], embeddings: number[][]): Promise<void> {
+        this._chunks.push(...chunks);
+        this._embeddings.push(...embeddings);
+      }
+
+      async search(queryEmbedding: number[], k = 5): Promise<PositionAwareChunk[]> {
+        const scored = this._chunks.map((chunk, i) => ({
+          chunk,
+          score: cosineSimilarity(queryEmbedding, this._embeddings[i]),
+        }));
+        scored.sort((a, b) => b.score - a.score);
+        return scored.slice(0, k).map((s) => s.chunk);
+      }
+
+      async clear(): Promise<void> {
+        this._chunks = [];
+        this._embeddings = [];
+      }
+    }
+    ```
+
+23. **Test fixture `sampleSpans` has `"x".repeat(50)` text that does not match actual document content.** This is fine for metric math tests but could mask bugs. Add fixtures with realistic text and matching positions.
+
+### Phase Order Optimization
+
+24. **Recommended adjusted phase order for fastest path to testable code:**
+    - Phase 1: Project setup (unchanged)
+    - Phase 2: Core types + utils/hashing + utils/span (merge utils into this phase)
+    - Phase 3: Metrics (pure functions, no dependencies, fully testable immediately)
+    - Phase 4: Chunkers + adapter
+    - Phase 5: Embedder/VectorStore interfaces + InMemoryVectorStore (test utility)
+    - Phase 6: Evaluation orchestrators (now testable with mocks and in-memory store)
+    - Phase 7: Synthetic data generation (needs LLM mocking)
+    - Phase 8: LangSmith integration
+    - Phase 9: Built-in implementations (OpenAI, Chroma, Cohere)
+    - Phase 10: Package exports + publishing
+
+    This front-loads pure logic and defers external dependencies, enabling continuous integration testing from Phase 2 onward.
+
+### Minor Issues
+
+25. **`ChunkRecall` returns `0.0` when ground truth is empty.** This is semantically wrong -- if there is nothing to recall, recall is trivially 1.0 (or undefined). Same for `SpanRecall`. Document the chosen convention explicitly.
+
+26. **Duplicate `getClient()` function** in `langsmith/client.ts` and `langsmith/upload.ts`. Extract to a shared `langsmith/get-client.ts` module.
+
+27. **`vitest.config.ts` uses `__dirname`** which is not available in ESM. Use `import.meta.dirname` (Node 21.2+) or `fileURLToPath(import.meta.url)` for Node 18 compatibility.
+
+28. **No `.gitignore` content specified.** Add at minimum: `node_modules/`, `dist/`, `coverage/`, `.env`, `*.tgz`.
+
+29. **Consider adding `CLAUDE.md`** with project conventions, architecture decisions, and quick-start instructions for AI-assisted development. The file is listed in the project structure but not specified.
