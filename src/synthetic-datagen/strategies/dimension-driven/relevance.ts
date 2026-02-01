@@ -42,24 +42,23 @@ async function summarizeDocuments(
   llmClient: LLMClient,
   model: string,
 ): Promise<ReadonlyMap<string, string>> {
-  const summaries = new Map<string, string>();
+  const results = await Promise.all(
+    corpus.documents.map(async (doc) => {
+      const content = doc.content.substring(0, 3000);
+      const response = await llmClient.complete({
+        model,
+        messages: [
+          { role: "system", content: SUMMARY_PROMPT },
+          { role: "user", content: content },
+        ],
+        responseFormat: "json",
+      });
+      const data = JSON.parse(response);
+      return [String(doc.id), data.summary ?? ""] as const;
+    }),
+  );
 
-  for (const doc of corpus.documents) {
-    const content = doc.content.substring(0, 3000);
-    const response = await llmClient.complete({
-      model,
-      messages: [
-        { role: "system", content: SUMMARY_PROMPT },
-        { role: "user", content: content },
-      ],
-      responseFormat: "json",
-    });
-
-    const data = JSON.parse(response);
-    summaries.set(String(doc.id), data.summary ?? "");
-  }
-
-  return summaries;
+  return new Map(results);
 }
 
 async function assignCombosToDocuments(
@@ -74,43 +73,49 @@ async function assignCombosToDocuments(
 
   // Batch into groups to avoid exceeding context limits
   const BATCH_SIZE = 50;
-  const allAssignments: DocComboAssignment[] = [];
-
+  const batches: Array<{ offset: number; batchCombos: DimensionCombo[] }> = [];
   for (let offset = 0; offset < combos.length; offset += BATCH_SIZE) {
-    const batchCombos = combos.slice(offset, offset + BATCH_SIZE);
-    const batchList = batchCombos
-      .map((combo, i) => {
-        const desc = Object.entries(combo)
-          .map(([k, v]) => `${k}=${v}`)
-          .join(", ");
-        return `[${offset + i}] ${desc}`;
-      })
-      .join("\n");
-
-    const prompt = `Document summaries:\n${summaryList}\n\nDimension combinations:\n${batchList}\n\nAssign each combination to the documents where it's plausible.`;
-
-    const response = await llmClient.complete({
-      model,
-      messages: [
-        { role: "system", content: ASSIGNMENT_PROMPT },
-        { role: "user", content: prompt },
-      ],
-      responseFormat: "json",
-    });
-
-    const data = JSON.parse(response);
-    const rawAssignments: Array<{ doc_id: string; combo_index: number }> =
-      data.assignments ?? [];
-
-    for (const a of rawAssignments) {
-      if (a.combo_index >= 0 && a.combo_index < combos.length) {
-        allAssignments.push({
-          docId: a.doc_id,
-          combo: combos[a.combo_index],
-        });
-      }
-    }
+    batches.push({ offset, batchCombos: combos.slice(offset, offset + BATCH_SIZE) });
   }
 
-  return allAssignments;
+  const batchResults = await Promise.all(
+    batches.map(async ({ offset, batchCombos }) => {
+      const batchList = batchCombos
+        .map((combo, i) => {
+          const desc = Object.entries(combo)
+            .map(([k, v]) => `${k}=${v}`)
+            .join(", ");
+          return `[${offset + i}] ${desc}`;
+        })
+        .join("\n");
+
+      const prompt = `Document summaries:\n${summaryList}\n\nDimension combinations:\n${batchList}\n\nAssign each combination to the documents where it's plausible.`;
+
+      const response = await llmClient.complete({
+        model,
+        messages: [
+          { role: "system", content: ASSIGNMENT_PROMPT },
+          { role: "user", content: prompt },
+        ],
+        responseFormat: "json",
+      });
+
+      const data = JSON.parse(response);
+      const rawAssignments: Array<{ doc_id: string; combo_index: number }> =
+        data.assignments ?? [];
+
+      const results: DocComboAssignment[] = [];
+      for (const a of rawAssignments) {
+        if (a.combo_index >= 0 && a.combo_index < combos.length) {
+          results.push({
+            docId: a.doc_id,
+            combo: combos[a.combo_index],
+          });
+        }
+      }
+      return results;
+    }),
+  );
+
+  return batchResults.flat();
 }

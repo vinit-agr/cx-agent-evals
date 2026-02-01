@@ -1,25 +1,10 @@
-## Purpose
-
-LLM-powered synthetic dataset generation for both chunk-level and token-level evaluation.
-
-## Requirements
-
-### Requirement: LLMClient interface
-The system SHALL define an `LLMClient` interface with a `complete(params: { model: string; messages: ReadonlyArray<{ role: string; content: string }>; responseFormat?: "json" | "text" }): Promise<string>` method. An `openAIClientAdapter` function SHALL wrap an OpenAI SDK client to conform to this interface.
-
-#### Scenario: LLMClient returns string response
-- **WHEN** calling `client.complete({ model: "gpt-4o", messages: [...], responseFormat: "json" })`
-- **THEN** the result SHALL be the string content of the LLM's response
-
-#### Scenario: OpenAI adapter wraps SDK client
-- **WHEN** calling `openAIClientAdapter(openaiClient)`
-- **THEN** the result SHALL be an `LLMClient` that delegates to `openaiClient.chat.completions.create`
+## MODIFIED Requirements
 
 ### Requirement: ChunkLevelSyntheticDatasetGenerator
-The system SHALL provide a `ChunkLevelSyntheticDatasetGenerator` that accepts an `LLMClient`, `Corpus`, and `Chunker`. It SHALL chunk all documents, then use the LLM to generate queries with associated relevant chunk IDs. It SHALL validate that returned chunk IDs exist in the chunk index, discarding invalid ones. It SHALL track document association per chunk.
+The system SHALL provide chunk-level synthetic data generation by composing a `QuestionStrategy` with the chunk-level `GroundTruthAssigner`. The existing `ChunkLevelSyntheticDatasetGenerator` class SHALL be replaced by the strategy + assigner composition. The chunk-level assigner SHALL retain existing behavior: SHA256-based chunk IDs, LLM-based chunk ID assignment, and invalid ID filtering.
 
 #### Scenario: Generate chunk-level ground truth
-- **WHEN** calling `generator.generate({ queriesPerDoc: 5 })`
+- **WHEN** calling the generation pipeline with a strategy and chunk-level evaluation type
 - **THEN** the result SHALL be an array of `ChunkLevelGroundTruth` objects, each with a query and valid chunk IDs
 
 #### Scenario: Invalid chunk IDs are filtered out
@@ -27,14 +12,14 @@ The system SHALL provide a `ChunkLevelSyntheticDatasetGenerator` that accepts an
 - **THEN** that ID SHALL be excluded from the ground truth entry
 
 #### Scenario: Upload to LangSmith
-- **WHEN** calling `generate({ uploadToLangsmith: true, datasetName: "my-dataset" })`
-- **THEN** the ground truth SHALL be uploaded to a LangSmith dataset with the given name
+- **WHEN** calling generate with `uploadToLangsmith: true`
+- **THEN** the ground truth SHALL be uploaded to a LangSmith dataset
 
 ### Requirement: TokenLevelSyntheticDatasetGenerator
-The system SHALL provide a `TokenLevelSyntheticDatasetGenerator` that accepts an `LLMClient` and `Corpus` (no chunker required). It SHALL use a two-step process: (1) LLM generates diverse questions per document, (2) LLM extracts verbatim excerpts answering each question. A post-processing step SHALL locate exact character positions via string matching. Excerpts that cannot be located SHALL be skipped with a warning.
+The system SHALL provide token-level synthetic data generation by composing a `QuestionStrategy` with the token-level `GroundTruthAssigner`. The existing `TokenLevelSyntheticDatasetGenerator` class SHALL be replaced by the strategy + assigner composition. The token-level assigner SHALL retain existing behavior: LLM-based verbatim excerpt extraction, exact string matching with whitespace-normalized fallback, and span validation.
 
 #### Scenario: Generate token-level ground truth
-- **WHEN** calling `generator.generate({ queriesPerDoc: 5 })`
+- **WHEN** calling the generation pipeline with a strategy and token-level evaluation type
 - **THEN** the result SHALL be an array of `TokenLevelGroundTruth` objects, each with a query and `CharacterSpan` array
 
 #### Scenario: Span text matches source document
@@ -49,8 +34,19 @@ The system SHALL provide a `TokenLevelSyntheticDatasetGenerator` that accepts an
 - **WHEN** exact `indexOf` fails for an excerpt
 - **THEN** the system SHALL attempt whitespace-normalized case-insensitive matching before giving up
 
+### Requirement: Simple prompt-based strategy
+The system SHALL provide a `SimpleStrategy` implementing `QuestionStrategy` that generates questions using improved prompts with few-shot examples, question-type constraints, anti-patterns, and difficulty distribution guidance. It SHALL accept `queriesPerDoc` as configuration and iterate over corpus documents.
+
+#### Scenario: Generate with queriesPerDoc
+- **WHEN** calling `strategy.generate(context)` with `queriesPerDoc: 5` and a corpus of 3 documents
+- **THEN** the strategy SHALL generate approximately 15 queries (5 per document)
+
+#### Scenario: Improved prompt quality
+- **WHEN** generating questions
+- **THEN** the prompt SHALL include few-shot examples, question-type variety instructions, and anti-pattern guards
+
 ### Requirement: Base generator with shared LLM calling
-The system SHALL provide a base `SyntheticDatasetGenerator` with a `callLLM(systemPrompt, userPrompt): Promise<string>` method that both generators extend. The model SHALL be configurable via constructor (default `"gpt-4o"`).
+The system SHALL provide a base `SyntheticDatasetGenerator` with a `callLLM(systemPrompt, userPrompt): Promise<string>` method that both strategies and ground-truth assigners can use. The model SHALL be configurable via constructor (default `"gpt-4o"`).
 
 #### Scenario: Configurable model
 - **WHEN** constructing a generator with `model: "gpt-4o-mini"`

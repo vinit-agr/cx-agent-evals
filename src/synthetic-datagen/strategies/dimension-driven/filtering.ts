@@ -35,13 +35,15 @@ async function buildPairwiseFilters(
   llmClient: LLMClient,
   model: string,
 ): Promise<PairFilter[]> {
-  const filters: PairFilter[] = [];
-
+  const tasks: Array<{ dimA: Dimension; dimB: Dimension }> = [];
   for (let i = 0; i < dimensions.length; i++) {
     for (let j = i + 1; j < dimensions.length; j++) {
-      const dimA = dimensions[i];
-      const dimB = dimensions[j];
+      tasks.push({ dimA: dimensions[i], dimB: dimensions[j] });
+    }
+  }
 
+  return Promise.all(
+    tasks.map(async ({ dimA, dimB }) => {
       const pairs = dimA.values.flatMap((a) =>
         dimB.values.map((b) => `${a} × ${b}`),
       );
@@ -76,11 +78,9 @@ Which pairs are unrealistic?`;
         unrealisticPairs.map((p) => `${p.dim_a_value}|${p.dim_b_value}`),
       );
 
-      filters.push({ dimA: dimA.name, dimB: dimB.name, unrealistic });
-    }
-  }
-
-  return filters;
+      return { dimA: dimA.name, dimB: dimB.name, unrealistic };
+    }),
+  );
 }
 
 function isValidCombo(

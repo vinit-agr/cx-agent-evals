@@ -3,40 +3,57 @@ import type {
   StrategyContext,
   GeneratedQuery,
   DimensionDrivenStrategyOptions,
+  ProgressCallback,
+  DocComboAssignment,
 } from "../types.js";
 import { loadDimensions } from "./dimensions.js";
 import { filterCombinations } from "./filtering.js";
 import { buildRelevanceMatrix } from "./relevance.js";
 import { stratifiedSample } from "./sampling.js";
 
-const GENERATION_PROMPT = `You are generating a synthetic user question for evaluating a RAG system.
-Generate exactly ONE question that matches the user profile described below and is answerable from the provided document content.
+const BATCH_GENERATION_PROMPT = `You are generating synthetic user questions for evaluating a RAG system.
+Generate questions that match the user profiles described below and are answerable from the provided document content.
 
-The question should be natural-sounding — something a real user with this profile would actually type or ask.
+Each question should be natural-sounding — something a real user with that profile would actually type or ask.
 
 Do NOT copy-paste or trivially rephrase the document text.
 
 Output JSON format:
 {
-  "question": "..."
+  "questions": [
+    { "profile_index": 0, "question": "..." },
+    { "profile_index": 1, "question": "..." }
+  ]
 }`;
 
 export class DimensionDrivenStrategy implements QuestionStrategy {
   readonly name = "dimension-driven";
   private _options: DimensionDrivenStrategyOptions;
+  private _onProgress: ProgressCallback;
 
   constructor(options: DimensionDrivenStrategyOptions) {
     this._options = options;
+    this._onProgress = options.onProgress ?? (() => {});
   }
 
   async generate(context: StrategyContext): Promise<GeneratedQuery[]> {
     const dimensions = await loadDimensions(this._options.dimensionsFilePath);
+
+    this._onProgress({
+      phase: "filtering",
+      totalPairs: (dimensions.length * (dimensions.length - 1)) / 2,
+    });
 
     const validCombos = await filterCombinations(
       dimensions,
       context.llmClient,
       context.model,
     );
+
+    this._onProgress({
+      phase: "summarizing",
+      totalDocs: context.corpus.documents.length,
+    });
 
     const matrix = await buildRelevanceMatrix(
       context.corpus,
@@ -45,50 +62,82 @@ export class DimensionDrivenStrategy implements QuestionStrategy {
       context.model,
     );
 
+    this._onProgress({
+      phase: "sampling",
+      totalQuestions: this._options.totalQuestions,
+    });
+
     const sampled = stratifiedSample(
       matrix.assignments,
       this._options.totalQuestions,
     );
 
-    const results: GeneratedQuery[] = [];
-
+    // Group sampled assignments by document
+    const byDoc = new Map<string, DocComboAssignment[]>();
     for (const assignment of sampled) {
+      const list = byDoc.get(assignment.docId) || [];
+      list.push(assignment);
+      byDoc.set(assignment.docId, list);
+    }
+
+    const results: GeneratedQuery[] = [];
+    const docEntries = [...byDoc.entries()];
+
+    for (let docIdx = 0; docIdx < docEntries.length; docIdx++) {
+      const [docId, assignments] = docEntries[docIdx];
       const doc = context.corpus.documents.find(
-        (d) => String(d.id) === assignment.docId,
+        (d) => String(d.id) === docId,
       );
       if (!doc) continue;
 
-      const profileDesc = Object.entries(assignment.combo)
-        .map(([dim, val]) => `- ${dim}: ${val}`)
-        .join("\n");
+      this._onProgress({
+        phase: "generating",
+        docId,
+        docIndex: docIdx,
+        totalDocs: docEntries.length,
+        questionsForDoc: assignments.length,
+      });
 
-      const prompt = `User profile:\n${profileDesc}\n\nDocument content:\n${doc.content.substring(0, 6000)}\n\nGenerate one question matching this profile.`;
+      // Build profiles for all assignments for this doc
+      const profiles = assignments.map((a, i) => {
+        const profileDesc = Object.entries(a.combo)
+          .map(([dim, val]) => `${dim}: ${val}`)
+          .join(", ");
+        return `[${i}] ${profileDesc}`;
+      });
+
+      const prompt = `Document content:\n${doc.content.substring(0, 6000)}\n\nUser profiles (generate one question per profile):\n${profiles.join("\n")}`;
 
       const response = await context.llmClient.complete({
         model: context.model,
         messages: [
-          { role: "system", content: GENERATION_PROMPT },
+          { role: "system", content: BATCH_GENERATION_PROMPT },
           { role: "user", content: prompt },
         ],
         responseFormat: "json",
       });
 
       const data = JSON.parse(response);
-      const question: string = data.question ?? "";
-      if (!question) continue;
+      const questions: Array<{ profile_index: number; question: string }> =
+        data.questions ?? [];
 
-      const metadata: Record<string, string> = {
-        strategy: "dimension-driven",
-        ...Object.fromEntries(
-          Object.entries(assignment.combo).map(([k, v]) => [k, String(v)]),
-        ),
-      };
+      for (const q of questions) {
+        const assignment = assignments[q.profile_index];
+        if (!assignment || !q.question) continue;
 
-      results.push({
-        query: question,
-        targetDocId: assignment.docId,
-        metadata,
-      });
+        const metadata: Record<string, string> = {
+          strategy: "dimension-driven",
+          ...Object.fromEntries(
+            Object.entries(assignment.combo).map(([k, v]) => [k, String(v)]),
+          ),
+        };
+
+        results.push({
+          query: q.question,
+          targetDocId: docId,
+          metadata,
+        });
+      }
     }
 
     return results;

@@ -22,9 +22,21 @@ export interface SimpleStrategyOptions {
   readonly queriesPerDoc: number;
 }
 
+export type ProgressCallback = (event: ProgressEvent) => void;
+
+export type ProgressEvent =
+  | { phase: "filtering"; totalPairs: number }
+  | { phase: "summarizing"; totalDocs: number }
+  | { phase: "assigning"; totalCombos: number }
+  | { phase: "sampling"; totalQuestions: number }
+  | { phase: "generating"; docId: string; docIndex: number; totalDocs: number; questionsForDoc: number }
+  | { phase: "ground-truth"; docId: string; docIndex: number; totalDocs: number }
+  | { phase: "done"; totalQuestions: number };
+
 export interface DimensionDrivenStrategyOptions {
   readonly dimensionsFilePath: string;
   readonly totalQuestions: number;
+  readonly onProgress?: ProgressCallback;
 }
 
 export interface Dimension {

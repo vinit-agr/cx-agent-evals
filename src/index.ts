@@ -91,6 +91,8 @@ export type {
   DimensionDrivenStrategyOptions,
   Dimension,
   DimensionCombo,
+  ProgressCallback,
+  ProgressEvent,
 } from "./synthetic-datagen/strategies/types.js";
 
 // LangSmith

@@ -8,12 +8,14 @@ export function QuestionList({
   onSelect,
   generating,
   totalDone,
+  phaseStatus,
 }: {
   questions: GeneratedQuestion[];
   selectedIndex: number | null;
   onSelect: (index: number) => void;
   generating: boolean;
   totalDone: number | null;
+  phaseStatus?: string | null;
 }) {
   // Group by docId
   const grouped = new Map<string, { question: GeneratedQuestion; index: number }[]>();
@@ -50,6 +52,43 @@ export function QuestionList({
           )}
         </span>
       </div>
+
+      {/* Phase status banner */}
+      {generating && phaseStatus && questions.length === 0 && (
+        <div className="px-3 py-4 border-b border-border/50">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
+            <span className="text-[11px] text-accent font-medium uppercase tracking-wider">
+              Pipeline
+            </span>
+          </div>
+          <p className="text-xs text-text-muted leading-relaxed">
+            {phaseStatus}
+          </p>
+        </div>
+      )}
+
+      {/* Inline phase status when questions are already showing */}
+      {generating && phaseStatus && questions.length > 0 && (
+        <div className="px-3 py-2 border-b border-accent/20 bg-accent/5">
+          <div className="flex items-center gap-2">
+            <span className="w-1 h-1 rounded-full bg-accent animate-pulse-dot" />
+            <span className="text-[10px] text-accent/80">
+              {phaseStatus}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Empty generating state (no phase info) */}
+      {generating && !phaseStatus && questions.length === 0 && (
+        <div className="flex items-center justify-center h-32">
+          <div className="flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse-dot" />
+            <span className="text-xs text-text-muted">Starting generation...</span>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         {[...grouped.entries()].map(([docId, items]) => (

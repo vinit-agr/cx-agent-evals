@@ -17,6 +17,8 @@ export type {
   DimensionDrivenStrategyOptions,
   Dimension,
   DimensionCombo,
+  ProgressCallback,
+  ProgressEvent,
 } from "./strategies/types.js";
 export { SimpleStrategy } from "./strategies/simple/generator.js";
 export { DimensionDrivenStrategy } from "./strategies/dimension-driven/generator.js";

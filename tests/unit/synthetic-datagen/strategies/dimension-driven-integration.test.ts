@@ -64,9 +64,12 @@ describe("DimensionDrivenStrategy integration", () => {
           });
         }
 
-        // Remaining calls: question generation
+        // Remaining calls: batch question generation per document
         return JSON.stringify({
-          question: "How do I configure OAuth2 for my app?",
+          questions: [
+            { profile_index: 0, question: "How do I configure OAuth2 for my app?" },
+            { profile_index: 1, question: "How do I configure OAuth2 for my app?" },
+          ],
         });
       },
     };

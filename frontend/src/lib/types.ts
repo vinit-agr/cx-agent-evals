@@ -26,12 +26,23 @@ export interface GeneratedQuestion {
   relevantSpans?: SpanInfo[];
 }
 
+export type StrategyType = "simple" | "dimension-driven";
+
+export interface Dimension {
+  name: string;
+  description: string;
+  values: string[];
+}
+
 export interface GenerateConfig {
   folderPath: string;
   mode: EvalMode;
+  strategy: StrategyType;
   questionsPerDoc: number;
   chunkSize?: number;
   chunkOverlap?: number;
+  dimensions?: Dimension[];
+  totalQuestions?: number;
 }
 
 export type SSEEvent =
