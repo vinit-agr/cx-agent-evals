@@ -11,7 +11,7 @@
   "dependencies": {
     "next": "16.1.6",
     "openai": ">=4.0",
-    "rag-evaluation-system": "file:..",
+    "rag-evaluation-system": "workspace:*",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },

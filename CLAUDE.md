@@ -6,62 +6,76 @@ RAG Evaluation System — a TypeScript library + Next.js frontend for evaluating
 
 ## Repository structure
 
+This is a **pnpm workspace monorepo** with three packages:
+
 ```
-src/                          # Core library (TypeScript, published as rag-evaluation-system)
-  types/                      # Branded types, primitives, document/corpus interfaces
-  chunkers/                   # Chunker interface + RecursiveCharacterChunker
-  embedders/                  # Embedder interface (OpenAI implementation at embedders/openai)
-  vector-stores/              # VectorStore interface (InMemory, Chroma at vector-stores/chroma)
-  rerankers/                  # Reranker interface (Cohere at rerankers/cohere)
-  metrics/                    # Evaluation metrics (chunk recall/precision/F1, span recall/precision/IoU)
-  evaluation/                 # Orchestrators: ChunkLevelEvaluation, TokenLevelEvaluation
-  synthetic-datagen/          # Synthetic question generation
-    strategies/               # Question generation strategies
-      simple/                 # SimpleStrategy — prompt-based, N questions per doc
-      dimension-driven/       # DimensionDrivenStrategy — dimension discovery, filtering, relevance, sampling
-    ground-truth/             # Ground truth assigners (chunk-level, token-level)
-    chunk-level/              # Legacy generator (re-exported for backward compat)
-    token-level/              # Legacy generator (re-exported for backward compat)
-  langsmith/                  # LangSmith upload/load utilities
+packages/
+  eval-lib/                     # Core library (TypeScript, published as rag-evaluation-system)
+    src/
+      types/                    # Branded types, primitives, document/corpus interfaces
+      chunkers/                 # Chunker interface + RecursiveCharacterChunker
+      embedders/                # Embedder interface (OpenAI implementation at embedders/openai)
+      vector-stores/            # VectorStore interface (InMemory, Chroma at vector-stores/chroma)
+      rerankers/                # Reranker interface (Cohere at rerankers/cohere)
+      metrics/                  # Evaluation metrics (chunk recall/precision/F1, span recall/precision/IoU)
+      evaluation/               # Orchestrators: ChunkLevelEvaluation, TokenLevelEvaluation
+      synthetic-datagen/        # Synthetic question generation
+        strategies/             # Question generation strategies
+          simple/               # SimpleStrategy — prompt-based, N questions per doc
+          dimension-driven/     # DimensionDrivenStrategy — dimension discovery, filtering, relevance, sampling
+        ground-truth/           # Ground truth assigners (chunk-level, token-level)
+        chunk-level/            # Legacy generator (re-exported for backward compat)
+        token-level/            # Legacy generator (re-exported for backward compat)
+      langsmith/                # LangSmith upload/load utilities
+    tests/                      # Vitest test suites
 
-frontend/                     # Next.js 16 app (Tailwind CSS v4, dark theme)
-  src/app/                    # App router pages and API routes
-    api/generate/             # SSE streaming endpoint for question generation
-    api/discover-dimensions/  # Dimension auto-discovery endpoint
-    api/corpus/               # Corpus loading endpoint
-    api/browse/               # Folder browser endpoint
-  src/components/             # UI components
-  src/lib/                    # Shared types
+  frontend/                     # Next.js 16 app (Tailwind CSS v4, dark theme)
+    src/app/                    # App router pages and API routes
+      api/generate/             # SSE streaming endpoint for question generation
+      api/discover-dimensions/  # Dimension auto-discovery endpoint
+      api/corpus/               # Corpus loading endpoint
+      api/browse/               # Folder browser endpoint
+    src/components/             # UI components
+    src/lib/                    # Shared types
 
-tests/                        # Vitest test suites
-openspec/                     # OpenSpec change management artifacts
+  backend/                      # Placeholder for future Convex backend
+
+data/                           # Sample data files (shared, at repo root)
+openspec/                       # OpenSpec change management artifacts
+pnpm-workspace.yaml             # Workspace config
 ```
 
 ## Key commands
 
 ```bash
-# Root (library)
-npm run build          # Build library with tsup (outputs to dist/)
-npm run test           # Run vitest tests
-npm run typecheck      # TypeScript check
+# From repo root (convenience scripts delegate to packages)
+pnpm build              # Build eval-lib with tsup (outputs to packages/eval-lib/dist/)
+pnpm test               # Run vitest tests in eval-lib
+pnpm typecheck          # TypeScript check eval-lib
+pnpm dev                # Start frontend Next.js dev server
 
-# Frontend
-cd frontend
-pnpm install           # Install deps (links to parent package via file:..)
-pnpm dev               # Next.js dev server on localhost:3000
-npx next build         # Production build (good for verifying TypeScript)
+# Or run directly in packages
+pnpm -C packages/eval-lib build
+pnpm -C packages/eval-lib test
+pnpm -C packages/frontend dev
+pnpm -C packages/frontend build    # Production build (good for verifying TypeScript)
 ```
 
 ## Development workflow
 
-After changing library code in `src/`:
-1. `npm run build` at project root (rebuilds dist/)
-2. `cd frontend && pnpm install` (re-links the package)
-3. Restart the Next.js dev server (Turbopack caches resolved modules)
+After changing library code in `packages/eval-lib/src/`:
+1. `pnpm build` at project root (rebuilds eval-lib dist/)
+2. Restart the Next.js dev server (Turbopack caches resolved modules)
+
+First-time setup:
+```bash
+pnpm install    # Run at repo root — links all workspace packages
+pnpm build      # Build the eval-lib so frontend can resolve imports
+```
 
 ## Environment
 
-- `OPENAI_API_KEY` required in `frontend/.env` for generation and dimension discovery
+- `OPENAI_API_KEY` required in `packages/frontend/.env` for generation and dimension discovery
 - Node >= 18, pnpm for package management
 - TypeScript strict mode, ESM (`"type": "module"`)
 
@@ -87,6 +101,6 @@ LLM calls in the dimension-driven pipeline are parallelized with `Promise.all` (
 
 ### Testing
 
-- Unit tests in `tests/unit/` with vitest
+- Unit tests in `packages/eval-lib/tests/` with vitest
 - Mock LLM clients for testing strategies (return canned JSON responses)
-- 22 tests covering strategies, ground-truth assigners, and legacy generators
+- 115 tests covering strategies, ground-truth assigners, legacy generators, metrics, types, and utilities
