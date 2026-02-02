@@ -22,6 +22,10 @@ export function GenerateConfig({
   dimensions,
   totalQuestions,
   onOpenWizard,
+  realWorldQuestions,
+  totalSyntheticQuestions,
+  onTotalSyntheticChange,
+  onOpenRealWorldModal,
 }: {
   mode: EvalMode;
   settings: GenerateSettings;
@@ -34,15 +38,21 @@ export function GenerateConfig({
   dimensions: Dimension[];
   totalQuestions: number;
   onOpenWizard: () => void;
+  realWorldQuestions: string[];
+  totalSyntheticQuestions: number;
+  onTotalSyntheticChange: (n: number) => void;
+  onOpenRealWorldModal: () => void;
 }) {
   function updateField(field: keyof GenerateSettings, value: number) {
     onChange({ ...settings, [field]: value });
   }
 
   const dimensionsConfigured = dimensions.length > 0;
+  const realWorldConfigured = realWorldQuestions.length > 0;
   const canGenerate =
     strategy === "simple" ||
-    (strategy === "dimension-driven" && dimensionsConfigured);
+    (strategy === "dimension-driven" && dimensionsConfigured) ||
+    (strategy === "real-world-grounded" && realWorldConfigured);
 
   return (
     <div className="animate-fade-in">
@@ -95,6 +105,50 @@ export function GenerateConfig({
                              hover:bg-accent/5 hover:border-accent/50 transition-all cursor-pointer"
                 >
                   Set Up Dimensions
+                </button>
+              )}
+            </div>
+          )}
+
+          {strategy === "real-world-grounded" && (
+            <div className="space-y-3">
+              {realWorldConfigured ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-text">
+                      {realWorldQuestions.length} question{realWorldQuestions.length !== 1 ? "s" : ""} loaded
+                    </span>
+                    <button
+                      onClick={onOpenRealWorldModal}
+                      className="text-[10px] text-accent hover:text-accent/80 transition-colors cursor-pointer"
+                    >
+                      Edit
+                    </button>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-text-muted mb-1">
+                      Synthetic questions to generate
+                    </label>
+                    <input
+                      type="number"
+                      min={0}
+                      max={500}
+                      value={totalSyntheticQuestions}
+                      onChange={(e) =>
+                        onTotalSyntheticChange(parseInt(e.target.value) || 0)
+                      }
+                      className="w-full bg-bg-surface border border-border rounded px-3 py-1.5 text-sm text-text
+                                 focus:outline-none focus:border-accent/50 transition-colors"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={onOpenRealWorldModal}
+                  className="w-full py-2.5 rounded border border-dashed border-accent/30 text-xs text-accent
+                             hover:bg-accent/5 hover:border-accent/50 transition-all cursor-pointer"
+                >
+                  Set Up Questions
                 </button>
               )}
             </div>

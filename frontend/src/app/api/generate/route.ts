@@ -7,6 +7,7 @@ import {
   openAIClientAdapter,
   SimpleStrategy,
   DimensionDrivenStrategy,
+  RealWorldGroundedStrategy,
   ChunkLevelGroundTruthAssigner,
   TokenLevelGroundTruthAssigner,
   generate,
@@ -49,6 +50,8 @@ export async function POST(request: NextRequest) {
     questionsPerDoc = 10,
     dimensions,
     totalQuestions = 50,
+    realWorldQuestions,
+    totalSyntheticQuestions = 50,
     chunkSize = 1000,
     chunkOverlap = 200,
   } = config;
@@ -135,6 +138,71 @@ export async function POST(request: NextRequest) {
             }
 
             // Assign ground truth per query and stream each result
+            for (const query of queries) {
+              const results = await assigner.assign([query], context) as ChunkLevelGroundTruth[];
+              for (const gt of results) {
+                const chunkData = gt.relevantChunkIds.map((id) => ({
+                  id: String(id),
+                  content: chunkMap.get(String(id)) ?? "",
+                }));
+                send({
+                  type: "question",
+                  docId: String(gt.query.metadata.sourceDoc ?? ""),
+                  query: String(gt.query.text),
+                  relevantChunkIds: gt.relevantChunkIds.map(String),
+                  chunks: chunkData,
+                });
+                questionCount++;
+              }
+            }
+          } else {
+            const assigner = new TokenLevelGroundTruthAssigner();
+            for (const query of queries) {
+              const results = await assigner.assign([query], context) as TokenLevelGroundTruth[];
+              for (const gt of results) {
+                send({
+                  type: "question",
+                  docId: String(gt.query.metadata.sourceDoc ?? ""),
+                  query: String(gt.query.text),
+                  relevantSpans: gt.relevantSpans.map((s) => ({
+                    docId: String(s.docId),
+                    start: s.start,
+                    end: s.end,
+                    text: s.text,
+                  })),
+                });
+                questionCount++;
+              }
+            }
+          }
+        } else if (strategyType === "real-world-grounded") {
+          // Real-world grounded strategy with embedder
+          const { OpenAIEmbedder } = await import("rag-evaluation-system/embedders/openai");
+          const embedder = await OpenAIEmbedder.create({ model: "text-embedding-3-small" });
+
+          const strategy = new RealWorldGroundedStrategy({
+            questions: realWorldQuestions ?? [],
+            totalSyntheticQuestions: totalSyntheticQuestions ?? 50,
+            onProgress: (event: ProgressEvent) => {
+              send({ type: "phase", ...event });
+            },
+          });
+
+          const context = { corpus, llmClient: llm, model: "gpt-4o-mini", embedder };
+          const queries = await strategy.generate(context);
+
+          send({ type: "phase", phase: "ground-truth-start", totalQuestions: queries.length });
+
+          if (mode === "chunk") {
+            const assigner = new ChunkLevelGroundTruthAssigner(chunker!);
+            const chunkMap = new Map<string, string>();
+            for (const doc of corpus.documents) {
+              const chunks = chunker!.chunk(doc.content);
+              for (const text of chunks) {
+                chunkMap.set(String(generateChunkId(text)), text);
+              }
+            }
+
             for (const query of queries) {
               const results = await assigner.assign([query], context) as ChunkLevelGroundTruth[];
               for (const gt of results) {

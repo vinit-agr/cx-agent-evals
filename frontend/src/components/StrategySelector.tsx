@@ -16,7 +16,7 @@ export function StrategySelector({
           Strategy
         </span>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-3 gap-2">
         <StrategyCard
           label="Simple"
           description="Prompt-based"
@@ -28,6 +28,12 @@ export function StrategySelector({
           description="Structured diversity"
           selected={value === "dimension-driven"}
           onClick={() => onChange("dimension-driven")}
+        />
+        <StrategyCard
+          label="Real-World"
+          description="Grounded in real Qs"
+          selected={value === "real-world-grounded"}
+          onClick={() => onChange("real-world-grounded")}
         />
       </div>
     </div>

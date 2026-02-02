@@ -28,3 +28,14 @@ The system SHALL allow any `QuestionStrategy` to be composed with any `GroundTru
 #### Scenario: Dimension-driven strategy with token-level evaluation
 - **WHEN** using the dimension-driven strategy with token-level evaluation type
 - **THEN** the dimension-driven strategy SHALL generate queries and the token-level assigner SHALL produce ground truth
+
+### Requirement: StrategyContext includes optional embedder
+The `StrategyContext` interface SHALL include an optional `embedder` field of type `Embedder`. Existing strategies SHALL continue to work without providing an embedder.
+
+#### Scenario: Embedder is optional
+- **WHEN** a strategy is called with a `StrategyContext` that has no `embedder` field
+- **THEN** the strategy SHALL function normally (existing behavior unchanged)
+
+#### Scenario: Embedder is provided
+- **WHEN** a strategy is called with a `StrategyContext` that includes an `embedder`
+- **THEN** the strategy MAY use it for embedding-based operations

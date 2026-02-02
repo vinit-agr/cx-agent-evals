@@ -1,4 +1,5 @@
 import type { Corpus } from "../../types/index.js";
+import type { Embedder } from "../../embedders/embedder.interface.js";
 import type { LLMClient } from "../base.js";
 
 export interface GeneratedQuery {
@@ -11,6 +12,7 @@ export interface StrategyContext {
   readonly corpus: Corpus;
   readonly llmClient: LLMClient;
   readonly model: string;
+  readonly embedder?: Embedder;
 }
 
 export interface QuestionStrategy {
@@ -31,6 +33,9 @@ export type ProgressEvent =
   | { phase: "sampling"; totalQuestions: number }
   | { phase: "generating"; docId: string; docIndex: number; totalDocs: number; questionsForDoc: number }
   | { phase: "ground-truth"; docId: string; docIndex: number; totalDocs: number }
+  | { phase: "embedding-questions"; totalQuestions: number }
+  | { phase: "embedding-passages"; totalPassages: number }
+  | { phase: "matching"; totalQuestions: number }
   | { phase: "done"; totalQuestions: number };
 
 export interface DimensionDrivenStrategyOptions {
@@ -55,4 +60,18 @@ export interface DocComboAssignment {
 export interface RelevanceMatrix {
   readonly assignments: readonly DocComboAssignment[];
   readonly docSummaries: ReadonlyMap<string, string>;
+}
+
+export interface RealWorldGroundedStrategyOptions {
+  readonly questions: readonly string[];
+  readonly totalSyntheticQuestions: number;
+  readonly matchThreshold?: number;
+  readonly fewShotExamplesPerDoc?: number;
+  readonly onProgress?: ProgressCallback;
+}
+
+export interface MatchedQuestion {
+  readonly question: string;
+  readonly score: number;
+  readonly passageText: string;
 }

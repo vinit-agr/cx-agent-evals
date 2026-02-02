@@ -26,7 +26,7 @@ export interface GeneratedQuestion {
   relevantSpans?: SpanInfo[];
 }
 
-export type StrategyType = "simple" | "dimension-driven";
+export type StrategyType = "simple" | "dimension-driven" | "real-world-grounded";
 
 export interface Dimension {
   name: string;

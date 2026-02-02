@@ -8,6 +8,7 @@ import { GenerateConfig, GenerateSettings } from "@/components/GenerateConfig";
 import { QuestionList } from "@/components/QuestionList";
 import { DocumentViewer } from "@/components/DocumentViewer";
 import { DimensionWizard } from "@/components/DimensionWizard";
+import { RealWorldQuestionsModal } from "@/components/RealWorldQuestionsModal";
 import { EvalMode, StrategyType, Dimension, DocumentInfo, GeneratedQuestion } from "@/lib/types";
 
 export default function Home() {
@@ -32,8 +33,11 @@ export default function Home() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardInitialStep, setWizardInitialStep] = useState(1);
   const [phaseStatus, setPhaseStatus] = useState<string | null>(null);
+  const [realWorldQuestions, setRealWorldQuestions] = useState<string[]>([]);
+  const [totalSyntheticQuestions, setTotalSyntheticQuestions] = useState(50);
+  const [realWorldModalOpen, setRealWorldModalOpen] = useState(false);
 
-  // Load saved dimension config from localStorage on mount
+  // Load saved configs from localStorage on mount
   useEffect(() => {
     try {
       const saved = localStorage.getItem("rag-eval:dimension-config");
@@ -43,6 +47,17 @@ export default function Home() {
           setDimensions(parsed.dimensions);
           setTotalQuestions(parsed.totalQuestions ?? 50);
           setStrategy("dimension-driven");
+        }
+      }
+    } catch {
+      // Ignore corrupted localStorage
+    }
+    try {
+      const saved = localStorage.getItem("rag-eval:real-world-questions");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setRealWorldQuestions(parsed);
         }
       }
     } catch {
@@ -90,6 +105,16 @@ export default function Home() {
     }
   }
 
+  function handleRealWorldSave(qs: string[]) {
+    setRealWorldQuestions(qs);
+    setRealWorldModalOpen(false);
+    try {
+      localStorage.setItem("rag-eval:real-world-questions", JSON.stringify(qs));
+    } catch {
+      // localStorage full or unavailable
+    }
+  }
+
   const handleGenerate = useCallback(async () => {
     if (!mode || !folderPath || generating) return;
 
@@ -115,9 +140,12 @@ export default function Home() {
 
       if (strategy === "simple") {
         body.questionsPerDoc = settings.questionsPerDoc;
-      } else {
+      } else if (strategy === "dimension-driven") {
         body.dimensions = dimensions;
         body.totalQuestions = totalQuestions;
+      } else if (strategy === "real-world-grounded") {
+        body.realWorldQuestions = realWorldQuestions;
+        body.totalSyntheticQuestions = totalSyntheticQuestions;
       }
 
       const res = await fetch("/api/generate", {
@@ -164,6 +192,9 @@ export default function Home() {
                 summarizing: `Summarizing ${event.totalDocs ?? ""} documents...`,
                 assigning: "Analyzing document relevance...",
                 sampling: `Sampling ${event.totalQuestions ?? ""} questions...`,
+                "embedding-questions": `Embedding ${event.totalQuestions ?? ""} questions...`,
+                "embedding-passages": `Embedding ${event.totalPassages ?? ""} passages...`,
+                matching: `Matched ${event.totalQuestions ?? ""} questions to documents...`,
                 generating: `Generating for ${event.docId ?? "document"} (${(event.docIndex ?? 0) + 1}/${event.totalDocs ?? "?"})...`,
                 "ground-truth-start": "Assigning ground truth...",
                 "ground-truth": `Ground truth for ${event.docId ?? "document"}...`,
@@ -198,7 +229,7 @@ export default function Home() {
     } finally {
       setGenerating(false);
     }
-  }, [mode, folderPath, generating, settings, strategy, dimensions, totalQuestions]);
+  }, [mode, folderPath, generating, settings, strategy, dimensions, totalQuestions, realWorldQuestions, totalSyntheticQuestions]);
 
   // Find selected question's document
   const selectedQ = selectedQuestion !== null ? questions[selectedQuestion] : null;
@@ -244,6 +275,10 @@ export default function Home() {
                   dimensions={dimensions}
                   totalQuestions={totalQuestions}
                   onOpenWizard={handleOpenWizard}
+                  realWorldQuestions={realWorldQuestions}
+                  totalSyntheticQuestions={totalSyntheticQuestions}
+                  onTotalSyntheticChange={setTotalSyntheticQuestions}
+                  onOpenRealWorldModal={() => setRealWorldModalOpen(true)}
                 />
               </div>
             )}
@@ -284,6 +319,15 @@ export default function Home() {
           initialStep={wizardInitialStep}
           onSave={handleWizardSave}
           onClose={() => setWizardOpen(false)}
+        />
+      )}
+
+      {/* Real-World Questions Modal */}
+      {realWorldModalOpen && (
+        <RealWorldQuestionsModal
+          initialQuestions={realWorldQuestions}
+          onSave={handleRealWorldSave}
+          onClose={() => setRealWorldModalOpen(false)}
         />
       )}
     </div>

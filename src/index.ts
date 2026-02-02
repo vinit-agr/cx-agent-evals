@@ -79,6 +79,7 @@ export { generate } from "./synthetic-datagen/index.js";
 export type { GenerateOptions } from "./synthetic-datagen/index.js";
 export { SimpleStrategy } from "./synthetic-datagen/strategies/simple/generator.js";
 export { DimensionDrivenStrategy } from "./synthetic-datagen/strategies/dimension-driven/generator.js";
+export { RealWorldGroundedStrategy } from "./synthetic-datagen/strategies/real-world-grounded/generator.js";
 export { discoverDimensions } from "./synthetic-datagen/strategies/dimension-driven/discovery.js";
 export { loadDimensions } from "./synthetic-datagen/strategies/dimension-driven/dimensions.js";
 export { ChunkLevelGroundTruthAssigner } from "./synthetic-datagen/ground-truth/chunk-level.js";
@@ -89,6 +90,8 @@ export type {
   StrategyContext,
   SimpleStrategyOptions,
   DimensionDrivenStrategyOptions,
+  RealWorldGroundedStrategyOptions,
+  MatchedQuestion,
   Dimension,
   DimensionCombo,
   ProgressCallback,
