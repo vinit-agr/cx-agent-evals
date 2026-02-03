@@ -71,8 +71,6 @@ export { spanRecall, spanPrecision, spanIoU } from "./evaluation/metrics/token-l
 export { mergeOverlappingSpans, calculateOverlap } from "./evaluation/metrics/token-level/utils.js";
 
 // Synthetic Data Generation
-export { ChunkLevelSyntheticDatasetGenerator } from "./synthetic-datagen/chunk-level/index.js";
-export { TokenLevelSyntheticDatasetGenerator } from "./synthetic-datagen/token-level/index.js";
 export type { LLMClient } from "./synthetic-datagen/base.js";
 export { openAIClientAdapter } from "./synthetic-datagen/base.js";
 export { generate } from "./synthetic-datagen/index.js";

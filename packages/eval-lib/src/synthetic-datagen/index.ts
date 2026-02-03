@@ -30,10 +30,6 @@ export { loadDimensions } from "./strategies/dimension-driven/dimensions.js";
 export { ChunkLevelGroundTruthAssigner } from "./ground-truth/chunk-level.js";
 export { TokenLevelGroundTruthAssigner } from "./ground-truth/token-level.js";
 
-// Legacy re-exports for backward compatibility during migration
-export { ChunkLevelSyntheticDatasetGenerator } from "./chunk-level/index.js";
-export { TokenLevelSyntheticDatasetGenerator } from "./token-level/index.js";
-
 export interface GenerateOptions {
   readonly strategy: QuestionStrategy;
   readonly evaluationType: EvaluationType;
