@@ -1,8 +1,28 @@
-## Purpose
+## ADDED Requirements
 
-Evaluation orchestrators for chunk-level and token-level RAG retrieval pipeline assessment.
+### Requirement: Pure evaluateChunkLevel function
+The system SHALL provide a pure function `evaluateChunkLevel(options: { results: Array<{ retrieved: ChunkId[], groundTruth: ChunkId[] }>, metrics: ChunkLevelMetric[] }): Record<string, number>` that computes metric scores for each result and returns averaged scores. It SHALL perform no I/O operations.
 
-## Requirements
+#### Scenario: Evaluate chunk-level results
+- **WHEN** calling `evaluateChunkLevel({ results, metrics })`
+- **THEN** the function SHALL compute each metric for each result and return averaged scores
+
+#### Scenario: Empty results returns zeros
+- **WHEN** calling `evaluateChunkLevel({ results: [], metrics })`
+- **THEN** the function SHALL return metric scores of `0` for each metric
+
+### Requirement: Pure evaluateTokenLevel function
+The system SHALL provide a pure function `evaluateTokenLevel(options: { results: Array<{ retrieved: CharacterSpan[], groundTruth: CharacterSpan[] }>, metrics: TokenLevelMetric[] }): Record<string, number>` that computes metric scores for each result and returns averaged scores. It SHALL perform no I/O operations.
+
+#### Scenario: Evaluate token-level results
+- **WHEN** calling `evaluateTokenLevel({ results, metrics })`
+- **THEN** the function SHALL compute each metric for each result and return averaged scores
+
+#### Scenario: Empty results returns zeros
+- **WHEN** calling `evaluateTokenLevel({ results: [], metrics })`
+- **THEN** the function SHALL return metric scores of `0` for each metric
+
+## MODIFIED Requirements
 
 ### Requirement: ChunkLevelEvaluation orchestrator
 The system SHALL provide a `ChunkLevelEvaluation` class that accepts a `Corpus` and `langsmithDatasetName`. Its `run` method SHALL accept a `Chunker`, `Embedder`, optional `VectorStore` (default: InMemoryVectorStore), optional `Reranker`, optional metrics (default: recall, precision, F1), and `k` (default: 5). It SHALL internally create a `VectorRAGRetriever` and delegate to `runExperiment()` with `evaluationType: 'chunk-level'`. The public API SHALL remain unchanged for backward compatibility.
@@ -45,43 +65,3 @@ The system SHALL provide a `TokenLevelEvaluation` class that accepts a `Corpus` 
 #### Scenario: Backward compatible API
 - **WHEN** using the existing `TokenLevelEvaluation` constructor and `run()` method signatures
 - **THEN** the API SHALL work identically to the previous implementation
-
-### Requirement: Pure evaluateChunkLevel function
-The system SHALL provide a pure function `evaluateChunkLevel(options: { results: Array<{ retrieved: ChunkId[], groundTruth: ChunkId[] }>, metrics: ChunkLevelMetric[] }): Record<string, number>` that computes metric scores for each result and returns averaged scores. It SHALL perform no I/O operations.
-
-#### Scenario: Evaluate chunk-level results
-- **WHEN** calling `evaluateChunkLevel({ results, metrics })`
-- **THEN** the function SHALL compute each metric for each result and return averaged scores
-
-#### Scenario: Empty results returns zeros
-- **WHEN** calling `evaluateChunkLevel({ results: [], metrics })`
-- **THEN** the function SHALL return metric scores of `0` for each metric
-
-### Requirement: Pure evaluateTokenLevel function
-The system SHALL provide a pure function `evaluateTokenLevel(options: { results: Array<{ retrieved: CharacterSpan[], groundTruth: CharacterSpan[] }>, metrics: TokenLevelMetric[] }): Record<string, number>` that computes metric scores for each result and returns averaged scores. It SHALL perform no I/O operations.
-
-#### Scenario: Evaluate token-level results
-- **WHEN** calling `evaluateTokenLevel({ results, metrics })`
-- **THEN** the function SHALL compute each metric for each result and return averaged scores
-
-#### Scenario: Empty results returns zeros
-- **WHEN** calling `evaluateTokenLevel({ results: [], metrics })`
-- **THEN** the function SHALL return metric scores of `0` for each metric
-
-### Requirement: Embedding batching
-The evaluation orchestrators SHALL batch embedding calls with a configurable `batchSize` (default: 100) to stay within API limits. Vector store `add` calls SHALL also be batched.
-
-#### Scenario: Large corpus is batched
-- **WHEN** evaluating a corpus with 500 chunks and `batchSize: 100`
-- **THEN** the embedder SHALL be called 5 times with 100 texts each
-
-### Requirement: Vector store cleanup
-The evaluation orchestrators SHALL call `vectorStore.clear()` after evaluation completes, including on error (using a finally block or equivalent).
-
-#### Scenario: Cleanup on success
-- **WHEN** evaluation completes successfully
-- **THEN** `vectorStore.clear()` SHALL be called
-
-#### Scenario: Cleanup on error
-- **WHEN** evaluation throws an error during metric computation
-- **THEN** `vectorStore.clear()` SHALL still be called

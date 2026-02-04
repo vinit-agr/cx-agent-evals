@@ -64,11 +64,24 @@ export type {
   ChunkLevelMetric,
   TokenLevelMetric,
 } from "./evaluation/index.js";
+export { evaluateChunkLevel, evaluateTokenLevel } from "./evaluation/index.js";
+export type { ChunkLevelEvaluateOptions, TokenLevelEvaluateOptions } from "./evaluation/index.js";
 
 // Metrics
 export { chunkRecall, chunkPrecision, chunkF1 } from "./evaluation/metrics/chunk-level/index.js";
 export { spanRecall, spanPrecision, spanIoU } from "./evaluation/metrics/token-level/index.js";
 export { mergeOverlappingSpans, calculateOverlap } from "./evaluation/metrics/token-level/utils.js";
+
+// Experiments
+export { runExperiment, VectorRAGRetriever } from "./experiments/index.js";
+export type {
+  Retriever,
+  ExperimentConfig,
+  ChunkLevelExperimentConfig,
+  TokenLevelExperimentConfig,
+  ExperimentResult,
+  VectorRAGRetrieverConfig,
+} from "./experiments/index.js";
 
 // Synthetic Data Generation
 export type { LLMClient } from "./synthetic-datagen/base.js";
