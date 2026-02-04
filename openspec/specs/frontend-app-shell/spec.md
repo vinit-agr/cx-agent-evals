@@ -1,4 +1,8 @@
-## ADDED Requirements
+## Purpose
+
+Next.js application shell for RAG evaluation frontend.
+
+## Requirements
 
 ### Requirement: Next.js project in frontend directory
 The system SHALL provide a Next.js application in `frontend/` using the App Router, React 19, Tailwind CSS, and TypeScript. The library SHALL be linked locally via `file:..` dependency.
@@ -7,20 +11,13 @@ The system SHALL provide a Next.js application in `frontend/` using the App Rout
 - **WHEN** user runs `pnpm dev` inside `frontend/`
 - **THEN** the application starts on `localhost:3000` and renders the home page
 
-### Requirement: Evaluation mode selection on home page
-The home page SHALL present two mode options: "Chunk-Level" and "Token-Level". The user MUST select one before proceeding to corpus loading.
+#### Scenario: Home page shows question generation
+- **WHEN** user visits the home page
+- **THEN** the app SHALL display the corpus loader and question generation UI directly (no mode selection)
 
-#### Scenario: User selects chunk-level mode
-- **WHEN** user clicks the "Chunk-Level" card
-- **THEN** the app navigates to the corpus loader view with evaluation mode set to "chunk"
+### Requirement: Shared layout without mode indicator
+The application layout SHALL NOT display an evaluation mode indicator since there is only one evaluation type. The header MAY show the application title.
 
-#### Scenario: User selects token-level mode
-- **WHEN** user clicks the "Token-Level" card
-- **THEN** the app navigates to the corpus loader view with evaluation mode set to "token"
-
-### Requirement: Shared layout with mode indicator
-The application SHALL display the current evaluation mode in the header once selected. A back/reset action SHALL allow returning to mode selection.
-
-#### Scenario: Mode displayed in header
-- **WHEN** user has selected an evaluation mode and is on any subsequent page
-- **THEN** the header displays the active mode (e.g., "Chunk-Level" or "Token-Level")
+#### Scenario: No mode in header
+- **WHEN** user is on any page
+- **THEN** the header SHALL NOT display a mode indicator (no "Chunk-Level" or "Token-Level" badge)

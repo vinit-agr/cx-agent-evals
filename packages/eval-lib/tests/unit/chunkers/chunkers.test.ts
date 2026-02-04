@@ -1,5 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
-import { ChunkerPositionAdapter } from "../../../src/chunkers/adapter.js";
+import { describe, it, expect } from "vitest";
 import { RecursiveCharacterChunker } from "../../../src/chunkers/recursive-character.js";
 import { isPositionAwareChunker } from "../../../src/chunkers/chunker.interface.js";
 import { createDocument } from "../../../src/types/documents.js";
@@ -14,48 +13,6 @@ describe("isPositionAwareChunker", () => {
   it("should return false for basic chunker", () => {
     const chunker: Chunker = { name: "basic", chunk: (t) => [t] };
     expect(isPositionAwareChunker(chunker)).toBe(false);
-  });
-});
-
-describe("ChunkerPositionAdapter", () => {
-  it("should locate chunks sequentially", () => {
-    const fakeChunker: Chunker = {
-      name: "FakeChunker",
-      chunk: () => ["AA", "BB", "CC"],
-    };
-    const adapter = new ChunkerPositionAdapter(fakeChunker);
-    const doc = createDocument({ id: "test.md", content: "AABBCC" });
-    const chunks = adapter.chunkWithPositions(doc);
-
-    expect(chunks).toHaveLength(3);
-    expect(chunks[0].start).toBe(0);
-    expect(chunks[0].end).toBe(2);
-    expect(chunks[1].start).toBe(2);
-    expect(chunks[1].end).toBe(4);
-    expect(chunks[2].start).toBe(4);
-    expect(chunks[2].end).toBe(6);
-  });
-
-  it("should skip non-locatable chunks", () => {
-    const fakeChunker: Chunker = {
-      name: "BadChunker",
-      chunk: () => ["exists", "DOES_NOT_EXIST"],
-    };
-    const spy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const adapter = new ChunkerPositionAdapter(fakeChunker);
-    const doc = createDocument({ id: "test.md", content: "exists in the doc" });
-    const chunks = adapter.chunkWithPositions(doc);
-
-    expect(chunks).toHaveLength(1);
-    expect(adapter.skippedChunks).toBe(1);
-    expect(spy).toHaveBeenCalled();
-    spy.mockRestore();
-  });
-
-  it("should have correct name", () => {
-    const fakeChunker: Chunker = { name: "MyChunker", chunk: () => [] };
-    const adapter = new ChunkerPositionAdapter(fakeChunker);
-    expect(adapter.name).toBe("PositionAdapter(MyChunker)");
   });
 });
 

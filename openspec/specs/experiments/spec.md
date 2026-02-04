@@ -1,11 +1,11 @@
 ## Purpose
 
-Experiments module for running retrieval experiments with pluggable retriever implementations and type-safe configurations.
+Experiment runner infrastructure for RAG retrieval evaluation with configurable retrievers and metrics.
 
 ## Requirements
 
 ### Requirement: Retriever interface
-The system SHALL define a `Retriever` interface with `readonly name: string`, `init(corpus: Corpus): Promise<void>`, `retrieve(query: string, k: number): Promise<PositionAwareChunk[]>`, and `cleanup(): Promise<void>`. The interface SHALL always return `PositionAwareChunk[]` regardless of evaluation type, enabling the same retriever to be used for both chunk-level and token-level evaluation.
+The system SHALL define a `Retriever` interface with `readonly name: string`, `init(corpus: Corpus): Promise<void>`, `retrieve(query: string, k: number): Promise<PositionAwareChunk[]>`, and `cleanup(): Promise<void>`. The interface SHALL always return `PositionAwareChunk[]` for span-based evaluation.
 
 #### Scenario: Retriever lifecycle
 - **WHEN** using a retriever in an experiment
@@ -15,20 +15,12 @@ The system SHALL define a `Retriever` interface with `readonly name: string`, `i
 - **WHEN** calling `retriever.retrieve(query, k)`
 - **THEN** the result SHALL be an array of up to `k` `PositionAwareChunk` objects containing `id`, `content`, `docId`, `start`, `end`, and `metadata`
 
-### Requirement: Type-safe ExperimentConfig with discriminated union
-The system SHALL define `ExperimentConfig` as a discriminated union based on `evaluationType`. When `evaluationType` is `'chunk-level'`, `groundTruth` SHALL be typed as `ChunkLevelGroundTruth[]` and `metrics` as `ChunkLevelMetric[]`. When `evaluationType` is `'token-level'`, `groundTruth` SHALL be typed as `TokenLevelGroundTruth[]` and `metrics` as `TokenLevelMetric[]`. Common fields SHALL include `name`, `corpus`, `retriever`, and `k`.
+### Requirement: ExperimentConfig type
+The system SHALL define `ExperimentConfig` as a single interface (not a discriminated union) with fields `name: string`, `corpus: Corpus`, `retriever: Retriever`, `k: number`, `groundTruth: GroundTruth[]`, and optional `metrics: Metric[]`.
 
-#### Scenario: Chunk-level config type safety
-- **WHEN** creating an experiment config with `evaluationType: 'chunk-level'`
-- **THEN** TypeScript SHALL enforce that `groundTruth` is `ChunkLevelGroundTruth[]` and `metrics` is `ChunkLevelMetric[]`
-
-#### Scenario: Token-level config type safety
-- **WHEN** creating an experiment config with `evaluationType: 'token-level'`
-- **THEN** TypeScript SHALL enforce that `groundTruth` is `TokenLevelGroundTruth[]` and `metrics` is `TokenLevelMetric[]`
-
-#### Scenario: Type error on mismatched ground truth
-- **WHEN** attempting to pass `TokenLevelGroundTruth[]` to a config with `evaluationType: 'chunk-level'`
-- **THEN** TypeScript SHALL produce a compile-time error
+#### Scenario: Config type safety
+- **WHEN** creating an experiment config
+- **THEN** TypeScript SHALL enforce that `groundTruth` is `GroundTruth[]` (with `relevantSpans`) and `metrics` is `Metric[]`
 
 ### Requirement: ExperimentResult type
 The system SHALL define `ExperimentResult` with `experimentName: string`, `retrieverName: string`, `metrics: Record<string, number>` (averaged scores), and `metadata` containing `corpusSize`, `queryCount`, `k`, and `durationMs`.
@@ -38,7 +30,7 @@ The system SHALL define `ExperimentResult` with `experimentName: string`, `retri
 - **THEN** the result SHALL contain the experiment name, retriever name, computed metrics, and metadata
 
 ### Requirement: runExperiment function
-The system SHALL provide an async `runExperiment(config: ExperimentConfig): Promise<ExperimentResult>` function that orchestrates the experiment lifecycle: (1) call `retriever.init(corpus)`, (2) for each ground truth entry, call `retriever.retrieve(query, k)`, (3) convert results based on `evaluationType` (PAChunk to ChunkId or CharacterSpan), (4) calculate metrics using the pure evaluator functions, (5) call `retriever.cleanup()` in a finally block, (6) return aggregated results.
+The system SHALL provide an async `runExperiment(config: ExperimentConfig): Promise<ExperimentResult>` function that orchestrates the experiment lifecycle: (1) call `retriever.init(corpus)`, (2) for each ground truth entry, call `retriever.retrieve(query, k)`, (3) convert `PositionAwareChunk[]` to `CharacterSpan[]` using `positionAwareChunkToSpan`, (4) calculate metrics using the `evaluate` function, (5) call `retriever.cleanup()` in a finally block, (6) return aggregated results.
 
 #### Scenario: Experiment execution flow
 - **WHEN** calling `runExperiment(config)`
@@ -48,20 +40,16 @@ The system SHALL provide an async `runExperiment(config: ExperimentConfig): Prom
 - **WHEN** an error occurs during retrieval or evaluation
 - **THEN** `retriever.cleanup()` SHALL still be called
 
-#### Scenario: Chunk-level result conversion
-- **WHEN** `evaluationType` is `'chunk-level'`
-- **THEN** the runner SHALL convert `PositionAwareChunk[]` to `ChunkId[]` before metric calculation
-
-#### Scenario: Token-level result conversion
-- **WHEN** `evaluationType` is `'token-level'`
+#### Scenario: Result conversion
+- **WHEN** running an experiment
 - **THEN** the runner SHALL convert `PositionAwareChunk[]` to `CharacterSpan[]` using `positionAwareChunkToSpan`
 
 ### Requirement: VectorRAGRetriever baseline implementation
-The system SHALL provide a `VectorRAGRetriever` class implementing the `Retriever` interface. It SHALL accept a config with `chunker: Chunker`, `embedder: Embedder`, optional `vectorStore: VectorStore` (default: InMemoryVectorStore), optional `reranker: Reranker`, and optional `batchSize: number` (default: 100). The `init()` method SHALL chunk the corpus, generate chunk IDs, embed in batches, and add to vector store. The `retrieve()` method SHALL embed the query, search the vector store, optionally rerank, and return `PositionAwareChunk[]`. The `cleanup()` method SHALL clear the vector store.
+The system SHALL provide a `VectorRAGRetriever` class implementing the `Retriever` interface. It SHALL accept a config with `chunker: PositionAwareChunker`, `embedder: Embedder`, optional `vectorStore: VectorStore` (default: InMemoryVectorStore), optional `reranker: Reranker`, and optional `batchSize: number` (default: 100). The chunker SHALL be a `PositionAwareChunker` (not a basic `Chunker`). The `init()` method SHALL chunk the corpus with positions, embed in batches, and add to vector store. The `retrieve()` method SHALL embed the query, search the vector store, optionally rerank, and return `PositionAwareChunk[]`. The `cleanup()` method SHALL clear the vector store.
 
 #### Scenario: VectorRAGRetriever init chunks and indexes
 - **WHEN** calling `retriever.init(corpus)`
-- **THEN** the retriever SHALL chunk all documents, embed chunks in batches, and add to the vector store
+- **THEN** the retriever SHALL chunk all documents with position tracking, embed chunks in batches, and add to the vector store
 
 #### Scenario: VectorRAGRetriever retrieve with reranker
 - **WHEN** calling `retriever.retrieve(query, k)` with a reranker configured
@@ -75,13 +63,9 @@ The system SHALL provide a `VectorRAGRetriever` class implementing the `Retrieve
 - **WHEN** calling `retriever.cleanup()`
 - **THEN** the vector store SHALL be cleared
 
-### Requirement: Default metrics based on evaluation type
-The system SHALL use default metrics when none are provided: `[chunkRecall, chunkPrecision, chunkF1]` for chunk-level and `[spanRecall, spanPrecision, spanIoU]` for token-level.
+### Requirement: Default metrics
+The system SHALL use default metrics when none are provided: `[recall, precision, iou]`.
 
-#### Scenario: Default chunk-level metrics
-- **WHEN** running a chunk-level experiment without specifying metrics
-- **THEN** the system SHALL use chunkRecall, chunkPrecision, and chunkF1
-
-#### Scenario: Default token-level metrics
-- **WHEN** running a token-level experiment without specifying metrics
-- **THEN** the system SHALL use spanRecall, spanPrecision, and spanIoU
+#### Scenario: Default metrics
+- **WHEN** running an experiment without specifying metrics
+- **THEN** the system SHALL use recall, precision, and iou

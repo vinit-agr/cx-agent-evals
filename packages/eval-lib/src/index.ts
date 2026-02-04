@@ -3,26 +3,20 @@ export {
   DocumentId,
   QueryId,
   QueryText,
-  ChunkId,
   PositionAwareChunkId,
 } from "./types/index.js";
 export type {
   Brand,
-  EvaluationType,
   Document,
   Corpus,
   CharacterSpan,
   SpanRange,
-  Chunk,
   PositionAwareChunk,
   Query,
-  ChunkLevelGroundTruth,
-  TokenLevelGroundTruth,
-  ChunkLevelDatasetExample,
-  TokenLevelDatasetExample,
+  GroundTruth,
+  DatasetExample,
   EvaluationResult,
-  ChunkLevelRunOutput,
-  TokenLevelRunOutput,
+  RunOutput,
 } from "./types/index.js";
 
 // Type utilities
@@ -36,13 +30,12 @@ export {
   CharacterSpanSchema,
   createCharacterSpan,
   positionAwareChunkToSpan,
-  ChunkLevelDatasetExampleSchema,
-  TokenLevelDatasetExampleSchema,
+  DatasetExampleSchema,
 } from "./types/index.js";
 
 // Chunkers
 export type { Chunker, PositionAwareChunker, RecursiveCharacterChunkerOptions } from "./chunkers/index.js";
-export { isPositionAwareChunker, ChunkerPositionAdapter, RecursiveCharacterChunker } from "./chunkers/index.js";
+export { isPositionAwareChunker, RecursiveCharacterChunker } from "./chunkers/index.js";
 
 // Embedder
 export type { Embedder } from "./embedders/index.js";
@@ -55,30 +48,24 @@ export { InMemoryVectorStore } from "./vector-stores/index.js";
 export type { Reranker } from "./rerankers/index.js";
 
 // Evaluation
-export { ChunkLevelEvaluation, TokenLevelEvaluation } from "./evaluation/index.js";
+export { Evaluation } from "./evaluation/index.js";
 export type {
-  ChunkLevelEvaluationConfig,
-  ChunkLevelRunOptions,
-  TokenLevelEvaluationConfig,
-  TokenLevelRunOptions,
-  ChunkLevelMetric,
-  TokenLevelMetric,
+  EvaluationConfig,
+  RunOptions,
+  Metric,
 } from "./evaluation/index.js";
-export { evaluateChunkLevel, evaluateTokenLevel } from "./evaluation/index.js";
-export type { ChunkLevelEvaluateOptions, TokenLevelEvaluateOptions } from "./evaluation/index.js";
+export { evaluate } from "./evaluation/index.js";
+export type { EvaluateOptions } from "./evaluation/index.js";
 
 // Metrics
-export { chunkRecall, chunkPrecision, chunkF1 } from "./evaluation/metrics/chunk-level/index.js";
-export { spanRecall, spanPrecision, spanIoU } from "./evaluation/metrics/token-level/index.js";
-export { mergeOverlappingSpans, calculateOverlap } from "./evaluation/metrics/token-level/utils.js";
+export { recall, precision, iou, f1 } from "./evaluation/metrics/index.js";
+export { mergeOverlappingSpans, calculateOverlap, totalSpanLength } from "./evaluation/metrics/utils.js";
 
 // Experiments
 export { runExperiment, VectorRAGRetriever } from "./experiments/index.js";
 export type {
   Retriever,
   ExperimentConfig,
-  ChunkLevelExperimentConfig,
-  TokenLevelExperimentConfig,
   ExperimentResult,
   VectorRAGRetrieverConfig,
 } from "./experiments/index.js";
@@ -93,8 +80,12 @@ export { DimensionDrivenStrategy } from "./synthetic-datagen/strategies/dimensio
 export { RealWorldGroundedStrategy } from "./synthetic-datagen/strategies/real-world-grounded/generator.js";
 export { discoverDimensions } from "./synthetic-datagen/strategies/dimension-driven/discovery.js";
 export { loadDimensions } from "./synthetic-datagen/strategies/dimension-driven/dimensions.js";
-export { ChunkLevelGroundTruthAssigner } from "./synthetic-datagen/ground-truth/chunk-level.js";
-export { TokenLevelGroundTruthAssigner } from "./synthetic-datagen/ground-truth/token-level.js";
+export { GroundTruthAssigner } from "./synthetic-datagen/ground-truth/token-level.js";
+export type {
+  Assigner,
+  GroundTruthAssignerInterface,
+  GroundTruthAssignerContext,
+} from "./synthetic-datagen/ground-truth/types.js";
 export type {
   QuestionStrategy,
   GeneratedQuery,
@@ -112,12 +103,10 @@ export type {
 // LangSmith
 export {
   getLangSmithClient,
-  uploadChunkLevelDataset,
-  uploadTokenLevelDataset,
-  loadChunkLevelDataset,
-  loadTokenLevelDataset,
+  uploadDataset,
+  loadDataset,
 } from "./langsmith/index.js";
 
 // Utils
-export { generateChunkId, generatePaChunkId } from "./utils/hashing.js";
+export { generatePaChunkId } from "./utils/hashing.js";
 export { spanOverlaps, spanOverlapChars, spanLength } from "./utils/span.js";

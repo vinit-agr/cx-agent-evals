@@ -1,17 +1,14 @@
 "use client";
 
-import { EvalMode, StrategyType, Dimension } from "@/lib/types";
+import { StrategyType, Dimension } from "@/lib/types";
 import { StrategySelector } from "./StrategySelector";
 import { DimensionSummary } from "./DimensionSummary";
 
 export interface GenerateSettings {
   questionsPerDoc: number;
-  chunkSize: number;
-  chunkOverlap: number;
 }
 
 export function GenerateConfig({
-  mode,
   settings,
   onChange,
   onGenerate,
@@ -27,7 +24,6 @@ export function GenerateConfig({
   onTotalSyntheticChange,
   onOpenRealWorldModal,
 }: {
-  mode: EvalMode;
   settings: GenerateSettings;
   onChange: (settings: GenerateSettings) => void;
   onGenerate: () => void;
@@ -154,45 +150,6 @@ export function GenerateConfig({
             </div>
           )}
         </div>
-
-        {mode === "chunk" && (
-          <div className="space-y-3 border-t border-border pt-3">
-            <div>
-              <label className="block text-[11px] text-text-muted mb-1">
-                Chunk size (characters)
-              </label>
-              <input
-                type="number"
-                min={100}
-                max={10000}
-                step={100}
-                value={settings.chunkSize}
-                onChange={(e) =>
-                  updateField("chunkSize", parseInt(e.target.value) || 100)
-                }
-                className="w-full bg-bg-surface border border-border rounded px-3 py-1.5 text-sm text-text
-                           focus:outline-none focus:border-accent/50 transition-colors"
-              />
-            </div>
-            <div>
-              <label className="block text-[11px] text-text-muted mb-1">
-                Chunk overlap (characters)
-              </label>
-              <input
-                type="number"
-                min={0}
-                max={settings.chunkSize - 1}
-                step={50}
-                value={settings.chunkOverlap}
-                onChange={(e) =>
-                  updateField("chunkOverlap", parseInt(e.target.value) || 0)
-                }
-                className="w-full bg-bg-surface border border-border rounded px-3 py-1.5 text-sm text-text
-                           focus:outline-none focus:border-accent/50 transition-colors"
-              />
-            </div>
-          </div>
-        )}
       </div>
 
       <button

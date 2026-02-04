@@ -3,19 +3,15 @@ import {
   corpusFromFolder,
   createCorpus,
   createDocument,
-  RecursiveCharacterChunker,
   openAIClientAdapter,
   SimpleStrategy,
   DimensionDrivenStrategy,
   RealWorldGroundedStrategy,
-  ChunkLevelGroundTruthAssigner,
-  TokenLevelGroundTruthAssigner,
+  GroundTruthAssigner,
   generate,
-  generateChunkId,
 } from "rag-evaluation-system";
 import type {
-  ChunkLevelGroundTruth,
-  TokenLevelGroundTruth,
+  GroundTruth,
   QuestionStrategy,
   ProgressEvent,
 } from "rag-evaluation-system";
@@ -45,20 +41,17 @@ export async function POST(request: NextRequest) {
 
   const {
     folderPath,
-    mode,
     strategy: strategyType = "simple",
     questionsPerDoc = 10,
     dimensions,
     totalQuestions = 50,
     realWorldQuestions,
     totalSyntheticQuestions = 50,
-    chunkSize = 1000,
-    chunkOverlap = 200,
   } = config;
 
-  if (!folderPath || !mode) {
+  if (!folderPath) {
     return new Response(
-      JSON.stringify({ error: "folderPath and mode are required" }),
+      JSON.stringify({ error: "folderPath is required" }),
       { status: 400, headers: { "Content-Type": "application/json" } },
     );
   }
@@ -97,11 +90,6 @@ export async function POST(request: NextRequest) {
           return;
         }
 
-        const chunker =
-          mode === "chunk"
-            ? new RecursiveCharacterChunker({ chunkSize, chunkOverlap })
-            : undefined;
-
         let questionCount = 0;
 
         if (strategyType === "dimension-driven") {
@@ -126,53 +114,22 @@ export async function POST(request: NextRequest) {
           // Now assign ground truth per-query and stream results
           send({ type: "phase", phase: "ground-truth-start", totalQuestions: queries.length });
 
-          if (mode === "chunk") {
-            const assigner = new ChunkLevelGroundTruthAssigner(chunker!);
-            // Build chunk index for sending chunk content to frontend
-            const chunkMap = new Map<string, string>();
-            for (const doc of corpus.documents) {
-              const chunks = chunker!.chunk(doc.content);
-              for (const text of chunks) {
-                chunkMap.set(String(generateChunkId(text)), text);
-              }
-            }
-
-            // Assign ground truth per query and stream each result
-            for (const query of queries) {
-              const results = await assigner.assign([query], context) as ChunkLevelGroundTruth[];
-              for (const gt of results) {
-                const chunkData = gt.relevantChunkIds.map((id) => ({
-                  id: String(id),
-                  content: chunkMap.get(String(id)) ?? "",
-                }));
-                send({
-                  type: "question",
-                  docId: String(gt.query.metadata.sourceDoc ?? ""),
-                  query: String(gt.query.text),
-                  relevantChunkIds: gt.relevantChunkIds.map(String),
-                  chunks: chunkData,
-                });
-                questionCount++;
-              }
-            }
-          } else {
-            const assigner = new TokenLevelGroundTruthAssigner();
-            for (const query of queries) {
-              const results = await assigner.assign([query], context) as TokenLevelGroundTruth[];
-              for (const gt of results) {
-                send({
-                  type: "question",
-                  docId: String(gt.query.metadata.sourceDoc ?? ""),
-                  query: String(gt.query.text),
-                  relevantSpans: gt.relevantSpans.map((s) => ({
-                    docId: String(s.docId),
-                    start: s.start,
-                    end: s.end,
-                    text: s.text,
-                  })),
-                });
-                questionCount++;
-              }
+          const assigner = new GroundTruthAssigner();
+          for (const query of queries) {
+            const results = await assigner.assign([query], context) as GroundTruth[];
+            for (const gt of results) {
+              send({
+                type: "question",
+                docId: String(gt.query.metadata.sourceDoc ?? ""),
+                query: String(gt.query.text),
+                relevantSpans: gt.relevantSpans.map((s) => ({
+                  docId: String(s.docId),
+                  start: s.start,
+                  end: s.end,
+                  text: s.text,
+                })),
+              });
+              questionCount++;
             }
           }
         } else if (strategyType === "real-world-grounded") {
@@ -193,51 +150,22 @@ export async function POST(request: NextRequest) {
 
           send({ type: "phase", phase: "ground-truth-start", totalQuestions: queries.length });
 
-          if (mode === "chunk") {
-            const assigner = new ChunkLevelGroundTruthAssigner(chunker!);
-            const chunkMap = new Map<string, string>();
-            for (const doc of corpus.documents) {
-              const chunks = chunker!.chunk(doc.content);
-              for (const text of chunks) {
-                chunkMap.set(String(generateChunkId(text)), text);
-              }
-            }
-
-            for (const query of queries) {
-              const results = await assigner.assign([query], context) as ChunkLevelGroundTruth[];
-              for (const gt of results) {
-                const chunkData = gt.relevantChunkIds.map((id) => ({
-                  id: String(id),
-                  content: chunkMap.get(String(id)) ?? "",
-                }));
-                send({
-                  type: "question",
-                  docId: String(gt.query.metadata.sourceDoc ?? ""),
-                  query: String(gt.query.text),
-                  relevantChunkIds: gt.relevantChunkIds.map(String),
-                  chunks: chunkData,
-                });
-                questionCount++;
-              }
-            }
-          } else {
-            const assigner = new TokenLevelGroundTruthAssigner();
-            for (const query of queries) {
-              const results = await assigner.assign([query], context) as TokenLevelGroundTruth[];
-              for (const gt of results) {
-                send({
-                  type: "question",
-                  docId: String(gt.query.metadata.sourceDoc ?? ""),
-                  query: String(gt.query.text),
-                  relevantSpans: gt.relevantSpans.map((s) => ({
-                    docId: String(s.docId),
-                    start: s.start,
-                    end: s.end,
-                    text: s.text,
-                  })),
-                });
-                questionCount++;
-              }
+          const assigner = new GroundTruthAssigner();
+          for (const query of queries) {
+            const results = await assigner.assign([query], context) as GroundTruth[];
+            for (const gt of results) {
+              send({
+                type: "question",
+                docId: String(gt.query.metadata.sourceDoc ?? ""),
+                query: String(gt.query.text),
+                relevantSpans: gt.relevantSpans.map((s) => ({
+                  docId: String(s.docId),
+                  start: s.start,
+                  end: s.end,
+                  text: s.text,
+                })),
+              });
+              questionCount++;
             }
           }
         } else {
@@ -246,72 +174,32 @@ export async function POST(request: NextRequest) {
             queriesPerDoc: questionsPerDoc,
           });
 
-          if (mode === "chunk") {
-            for (const doc of corpus.documents) {
-              const singleCorpus = createCorpus([
-                createDocument({ id: String(doc.id), content: doc.content }),
-              ]);
+          for (const doc of corpus.documents) {
+            const singleCorpus = createCorpus([
+              createDocument({ id: String(doc.id), content: doc.content }),
+            ]);
 
-              const groundTruth = (await generate({
-                strategy,
-                evaluationType: "chunk-level",
-                corpus: singleCorpus,
-                llmClient: llm,
-                model: "gpt-4o-mini",
-                chunker,
-                uploadToLangsmith: false,
-              })) as ChunkLevelGroundTruth[];
+            const groundTruth = (await generate({
+              strategy,
+              corpus: singleCorpus,
+              llmClient: llm,
+              model: "gpt-4o-mini",
+              uploadToLangsmith: false,
+            })) as GroundTruth[];
 
-              const chunks = chunker!.chunk(doc.content);
-              const chunkMap = new Map<string, string>();
-              for (const text of chunks) {
-                chunkMap.set(String(generateChunkId(text)), text);
-              }
-
-              for (const gt of groundTruth) {
-                const chunkData = gt.relevantChunkIds.map((id) => ({
-                  id: String(id),
-                  content: chunkMap.get(String(id)) ?? "",
-                }));
-                send({
-                  type: "question",
-                  docId: String(doc.id),
-                  query: String(gt.query.text),
-                  relevantChunkIds: gt.relevantChunkIds.map(String),
-                  chunks: chunkData,
-                });
-                questionCount++;
-              }
-            }
-          } else {
-            for (const doc of corpus.documents) {
-              const singleCorpus = createCorpus([
-                createDocument({ id: String(doc.id), content: doc.content }),
-              ]);
-
-              const groundTruth = (await generate({
-                strategy,
-                evaluationType: "token-level",
-                corpus: singleCorpus,
-                llmClient: llm,
-                model: "gpt-4o-mini",
-                uploadToLangsmith: false,
-              })) as TokenLevelGroundTruth[];
-
-              for (const gt of groundTruth) {
-                send({
-                  type: "question",
-                  docId: String(doc.id),
-                  query: String(gt.query.text),
-                  relevantSpans: gt.relevantSpans.map((s) => ({
-                    docId: String(s.docId),
-                    start: s.start,
-                    end: s.end,
-                    text: s.text,
-                  })),
-                });
-                questionCount++;
-              }
+            for (const gt of groundTruth) {
+              send({
+                type: "question",
+                docId: String(doc.id),
+                query: String(gt.query.text),
+                relevantSpans: gt.relevantSpans.map((s) => ({
+                  docId: String(s.docId),
+                  start: s.start,
+                  end: s.end,
+                  text: s.text,
+                })),
+              });
+              questionCount++;
             }
           }
         }

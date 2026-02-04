@@ -1,9 +1,9 @@
-import type { CharacterSpan } from "../../../types/chunks.js";
-import type { TokenLevelMetric } from "../base.js";
+import type { CharacterSpan } from "../../types/chunks.js";
+import type { Metric } from "./base.js";
 import { calculateOverlap, totalSpanLength } from "./utils.js";
 
-export const spanRecall: TokenLevelMetric = {
-  name: "span_recall" as const,
+export const recall: Metric = {
+  name: "recall" as const,
   calculate(retrieved: readonly CharacterSpan[], groundTruth: readonly CharacterSpan[]): number {
     if (groundTruth.length === 0) return 1.0;
     const totalGtChars = totalSpanLength(groundTruth);

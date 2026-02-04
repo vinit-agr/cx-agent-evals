@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { DocumentInfo, GeneratedQuestion, EvalMode } from "@/lib/types";
+import { DocumentInfo, GeneratedQuestion } from "@/lib/types";
 
 const HIGHLIGHT_COLORS = [
   "var(--color-chunk-1)",
@@ -20,23 +20,10 @@ interface HighlightSpan {
 function computeHighlights(
   doc: DocumentInfo,
   question: GeneratedQuestion,
-  mode: EvalMode,
 ): HighlightSpan[] {
   const spans: HighlightSpan[] = [];
 
-  if (mode === "chunk" && question.chunks) {
-    question.chunks.forEach((chunk, i) => {
-      // Find the chunk text in the document
-      const idx = doc.content.indexOf(chunk.content);
-      if (idx !== -1) {
-        spans.push({
-          start: idx,
-          end: idx + chunk.content.length,
-          colorIndex: i % HIGHLIGHT_COLORS.length,
-        });
-      }
-    });
-  } else if (mode === "token" && question.relevantSpans) {
+  if (question.relevantSpans) {
     question.relevantSpans.forEach((span, i) => {
       if (String(span.docId) === doc.id) {
         spans.push({
@@ -98,11 +85,9 @@ function renderHighlightedText(content: string, highlights: HighlightSpan[]) {
 export function DocumentViewer({
   doc,
   question,
-  mode,
 }: {
   doc: DocumentInfo | null;
   question: GeneratedQuestion | null;
-  mode: EvalMode;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -122,8 +107,7 @@ export function DocumentViewer({
     );
   }
 
-  const highlights =
-    question ? computeHighlights(doc, question, mode) : [];
+  const highlights = question ? computeHighlights(doc, question) : [];
 
   const noHighlights = question && highlights.length === 0;
 
@@ -146,8 +130,7 @@ export function DocumentViewer({
       {noHighlights && (
         <div className="px-4 py-2 bg-warn/5 border-b border-warn/20">
           <span className="text-[11px] text-warn">
-            No relevant {mode === "chunk" ? "chunks" : "spans"} found for this
-            question
+            No relevant spans found for this question
           </span>
         </div>
       )}

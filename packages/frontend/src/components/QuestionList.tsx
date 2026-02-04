@@ -115,11 +115,9 @@ export function QuestionList({
                   {question.query}
                 </p>
                 <span className="text-[10px] text-text-dim mt-1 block">
-                  {question.relevantChunkIds
-                    ? `${question.relevantChunkIds.length} chunk${question.relevantChunkIds.length !== 1 ? "s" : ""}`
-                    : question.relevantSpans
-                      ? `${question.relevantSpans.length} span${question.relevantSpans.length !== 1 ? "s" : ""}`
-                      : ""}
+                  {question.relevantSpans
+                    ? `${question.relevantSpans.length} span${question.relevantSpans.length !== 1 ? "s" : ""}`
+                    : ""}
                 </span>
               </button>
             ))}

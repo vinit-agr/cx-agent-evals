@@ -5,11 +5,11 @@ Branded types, document/corpus models, chunk types, ground truth types, and Zod 
 ## Requirements
 
 ### Requirement: Branded type system for compile-time safety
-The system SHALL provide a `Brand<K, T>` utility type using `unique symbol` that creates nominal types from structural types. Branded types SHALL exist for `DocumentId`, `QueryId`, `QueryText`, `ChunkId`, and `PositionAwareChunkId`, all branding `string`.
+The system SHALL provide a `Brand<K, T>` utility type using `unique symbol` that creates nominal types from structural types. Branded types SHALL exist for `DocumentId`, `QueryId`, `QueryText`, and `PositionAwareChunkId`, all branding `string`.
 
 #### Scenario: Branded types prevent cross-assignment
 - **WHEN** a function accepts `DocumentId` as a parameter
-- **THEN** passing a plain `string` or a `ChunkId` value SHALL produce a TypeScript compile error
+- **THEN** passing a plain `string` or a `PositionAwareChunkId` value SHALL produce a TypeScript compile error
 
 #### Scenario: Factory functions create branded values
 - **WHEN** calling `DocumentId("test.md")`
@@ -31,7 +31,7 @@ The system SHALL define a `Document` interface with readonly fields `id: Documen
 - **THEN** the system SHALL load only `.txt` files matching the pattern
 
 ### Requirement: Chunk types
-The system SHALL define `Chunk` (with `id: ChunkId`, `content`, `docId`, `metadata`), `PositionAwareChunk` (adding `start: number` inclusive 0-indexed, `end: number` exclusive), and `CharacterSpan` (with `docId: DocumentId`, `start`, `end`, `text`).
+The system SHALL define `PositionAwareChunk` (with `id: PositionAwareChunkId`, `content`, `docId`, `start: number` inclusive 0-indexed, `end: number` exclusive, `metadata`), and `CharacterSpan` (with `docId: DocumentId`, `start`, `end`, `text`).
 
 #### Scenario: CharacterSpan validation rejects invalid spans
 - **WHEN** creating a `CharacterSpan` with `end <= start`
@@ -53,15 +53,19 @@ The system SHALL define a `SpanRange` interface with `docId: DocumentId`, `start
 - **THEN** the merge function SHALL operate on and return `SpanRange[]` without requiring a `text` field
 
 ### Requirement: Ground truth and dataset example types
-The system SHALL define `ChunkLevelGroundTruth` (query + `relevantChunkIds`), `TokenLevelGroundTruth` (query + `relevantSpans`), `ChunkLevelDatasetExample`, `TokenLevelDatasetExample`, and `EvaluationResult` (with `metrics: Record<string, number>`).
+The system SHALL define `GroundTruth` (query + `relevantSpans: CharacterSpan[]`), `DatasetExample`, and `EvaluationResult` (with `metrics: Record<string, number>`).
 
 #### Scenario: EvaluationResult contains metric scores
 - **WHEN** an evaluation completes
 - **THEN** the result SHALL contain a `metrics` record mapping metric names to numeric scores, and optionally an `experimentUrl`
 
+#### Scenario: GroundTruth contains spans
+- **WHEN** creating a ground truth entry
+- **THEN** it SHALL have a `query` field and a `relevantSpans` field containing `CharacterSpan[]`
+
 ### Requirement: Zod runtime validation schemas
-The system SHALL provide Zod schemas for `Document`, `Corpus`, `CharacterSpan`, `ChunkLevelDatasetExample`, and `TokenLevelDatasetExample` to validate data at system boundaries (file loading, LangSmith responses).
+The system SHALL provide Zod schemas for `Document`, `Corpus`, `CharacterSpan`, and `DatasetExample` to validate data at system boundaries (file loading, LangSmith responses).
 
 #### Scenario: Validate LangSmith dataset example
-- **WHEN** parsing a raw JSON object from LangSmith as a `TokenLevelDatasetExample`
+- **WHEN** parsing a raw JSON object from LangSmith as a `DatasetExample`
 - **THEN** the Zod schema SHALL validate the structure and throw on missing or invalid fields

@@ -1,9 +1,9 @@
-import type { CharacterSpan } from "../../../types/chunks.js";
-import type { TokenLevelMetric } from "../base.js";
+import type { CharacterSpan } from "../../types/chunks.js";
+import type { Metric } from "./base.js";
 import { calculateOverlap, totalSpanLength } from "./utils.js";
 
-export const spanPrecision: TokenLevelMetric = {
-  name: "span_precision" as const,
+export const precision: Metric = {
+  name: "precision" as const,
   calculate(retrieved: readonly CharacterSpan[], groundTruth: readonly CharacterSpan[]): number {
     if (retrieved.length === 0) return 0.0;
     const totalRetChars = totalSpanLength(retrieved);

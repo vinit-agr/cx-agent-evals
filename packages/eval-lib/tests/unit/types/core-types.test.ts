@@ -1,7 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
   DocumentId,
-  ChunkId,
   PositionAwareChunkId,
   QueryId,
   QueryText,
@@ -16,11 +15,6 @@ describe("Branded type factories", () => {
   it("should create DocumentId from string", () => {
     const id = DocumentId("test.md");
     expect(String(id)).toBe("test.md");
-  });
-
-  it("should create ChunkId from string", () => {
-    const id = ChunkId("chunk_abc123");
-    expect(String(id)).toBe("chunk_abc123");
   });
 
   it("should create PositionAwareChunkId from string", () => {

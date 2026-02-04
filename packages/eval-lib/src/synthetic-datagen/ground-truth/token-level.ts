@@ -1,7 +1,7 @@
-import type { TokenLevelGroundTruth, CharacterSpan } from "../../types/index.js";
+import type { GroundTruth, CharacterSpan } from "../../types/index.js";
 import { QueryId, QueryText } from "../../types/primitives.js";
 import { createCharacterSpan } from "../../types/chunks.js";
-import type { GroundTruthAssigner, GroundTruthAssignerContext } from "./types.js";
+import type { GroundTruthAssignerInterface, GroundTruthAssignerContext } from "./types.js";
 import type { GeneratedQuery } from "../strategies/types.js";
 
 const EXCERPT_PROMPT = `You are an expert at identifying relevant text.
@@ -10,16 +10,14 @@ Copy text VERBATIM - do not paraphrase. Each excerpt must appear exactly in the 
 
 Output JSON: { "excerpts": ["exact text from document...", ...] }`;
 
-export class TokenLevelGroundTruthAssigner
-  implements GroundTruthAssigner<TokenLevelGroundTruth>
-{
-  readonly name = "token-level";
+export class GroundTruthAssigner implements GroundTruthAssignerInterface<GroundTruth> {
+  readonly name = "ground-truth-assigner";
 
   async assign(
     queries: GeneratedQuery[],
     context: GroundTruthAssignerContext,
-  ): Promise<TokenLevelGroundTruth[]> {
-    const results: TokenLevelGroundTruth[] = [];
+  ): Promise<GroundTruth[]> {
+    const results: GroundTruth[] = [];
 
     for (let i = 0; i < queries.length; i++) {
       const query = queries[i];

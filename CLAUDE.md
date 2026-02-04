@@ -2,7 +2,7 @@
 
 ## Project overview
 
-RAG Evaluation System — a TypeScript library + Next.js frontend for evaluating RAG retrieval pipelines. Supports chunk-level (chunk ID matching) and token-level (character span matching) evaluation paradigms, with synthetic question generation and a visual inspection UI.
+RAG Evaluation System — a TypeScript library + Next.js frontend for evaluating RAG retrieval pipelines. Uses span-based (character-level) evaluation with character span matching for precise retrieval assessment, synthetic question generation, and a visual inspection UI.
 
 ## Repository structure
 
@@ -17,15 +17,14 @@ packages/
       embedders/                # Embedder interface (OpenAI implementation at embedders/openai)
       vector-stores/            # VectorStore interface (InMemory, Chroma at vector-stores/chroma)
       rerankers/                # Reranker interface (Cohere at rerankers/cohere)
-      metrics/                  # Evaluation metrics (chunk recall/precision/F1, span recall/precision/IoU)
-      evaluation/               # Orchestrators: ChunkLevelEvaluation, TokenLevelEvaluation
+      evaluation/               # Evaluation orchestrator and metrics (recall, precision, IoU, F1)
       synthetic-datagen/        # Synthetic question generation
         strategies/             # Question generation strategies
           simple/               # SimpleStrategy — prompt-based, N questions per doc
           dimension-driven/     # DimensionDrivenStrategy — dimension discovery, filtering, relevance, sampling
-        ground-truth/           # Ground truth assigners (chunk-level, token-level)
-        chunk-level/            # Legacy generator (re-exported for backward compat)
-        token-level/            # Legacy generator (re-exported for backward compat)
+          real-world-grounded/  # RealWorldGroundedStrategy — question matching with embedding similarity
+        ground-truth/           # Ground truth assigner (span-based)
+      experiments/              # Experiment runner and baseline retrievers
       langsmith/                # LangSmith upload/load utilities
     tests/                      # Vitest test suites
 
@@ -81,14 +80,22 @@ pnpm build      # Build the eval-lib so frontend can resolve imports
 
 ## Architecture notes
 
+### Evaluation approach
+
+The system uses span-based (character-level) evaluation exclusively:
+- Ground truth is specified as `CharacterSpan[]` with exact text positions in source documents
+- Metrics (`recall`, `precision`, `iou`, `f1`) measure character-level overlap
+- `PositionAwareChunker` interface required for chunkers that participate in evaluation
+
 ### Synthetic data generation
 
-Two strategies, selectable from the frontend:
+Three strategies, selectable from the frontend:
 
 - **SimpleStrategy**: Prompt-based. Generates N questions per document.
 - **DimensionDrivenStrategy**: Structured diversity. Pipeline: load dimensions → pairwise filter combinations → summarize docs → build relevance matrix → stratified sample → batch generate per document. Accepts `onProgress` callback for streaming phase events.
+- **RealWorldGroundedStrategy**: Matches real-world questions to documents using embedding similarity.
 
-Both strategies produce `GeneratedQuery[]`, which are then passed to a ground-truth assigner (chunk-level or token-level) to create labeled evaluation data.
+All strategies produce `GeneratedQuery[]`, which are then passed to the `GroundTruthAssigner` to create labeled evaluation data with character spans.
 
 LLM calls in the dimension-driven pipeline are parallelized with `Promise.all` (filtering, summarization, assignment batches).
 
@@ -103,4 +110,4 @@ LLM calls in the dimension-driven pipeline are parallelized with `Promise.all` (
 
 - Unit tests in `packages/eval-lib/tests/` with vitest
 - Mock LLM clients for testing strategies (return canned JSON responses)
-- 115 tests covering strategies, ground-truth assigners, legacy generators, metrics, types, and utilities
+- 104 tests covering strategies, ground-truth assigners, metrics, types, and utilities

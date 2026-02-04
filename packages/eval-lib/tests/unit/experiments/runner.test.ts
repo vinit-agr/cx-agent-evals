@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { runExperiment } from "../../../src/experiments/runner.js";
 import type { Retriever } from "../../../src/experiments/retriever.interface.js";
-import type { Corpus, PositionAwareChunk, ChunkLevelGroundTruth, TokenLevelGroundTruth } from "../../../src/types/index.js";
-import { DocumentId, QueryId, QueryText, ChunkId, PositionAwareChunkId } from "../../../src/types/primitives.js";
-import { chunkRecall } from "../../../src/evaluation/metrics/chunk-level/recall.js";
-import { spanRecall } from "../../../src/evaluation/metrics/token-level/recall.js";
+import type { Corpus, PositionAwareChunk, GroundTruth } from "../../../src/types/index.js";
+import { DocumentId, QueryId, QueryText, PositionAwareChunkId } from "../../../src/types/primitives.js";
+import { recall } from "../../../src/evaluation/metrics/recall.js";
 
 describe("runExperiment", () => {
   let mockRetriever: Retriever;
@@ -35,60 +34,9 @@ describe("runExperiment", () => {
     };
   });
 
-  describe("chunk-level experiments", () => {
-    it("should run chunk-level experiment and return results", async () => {
-      const groundTruth: ChunkLevelGroundTruth[] = [
-        {
-          query: { id: QueryId("q1"), text: QueryText("test query") },
-          relevantChunkIds: [ChunkId("test content")], // ChunkId is hash of content
-        },
-      ];
-
-      const result = await runExperiment({
-        name: "test-experiment",
-        evaluationType: "chunk-level",
-        corpus,
-        groundTruth,
-        retriever: mockRetriever,
-        k: 5,
-      });
-
-      expect(result.experimentName).toBe("test-experiment");
-      expect(result.retrieverName).toBe("mock-retriever");
-      expect(result.metrics).toHaveProperty("chunk_recall");
-      expect(result.metrics).toHaveProperty("chunk_precision");
-      expect(result.metrics).toHaveProperty("chunk_f1");
-      expect(result.metadata.corpusSize).toBe(1);
-      expect(result.metadata.queryCount).toBe(1);
-      expect(result.metadata.k).toBe(5);
-      expect(result.metadata.durationMs).toBeGreaterThanOrEqual(0);
-    });
-
-    it("should use custom metrics when provided", async () => {
-      const groundTruth: ChunkLevelGroundTruth[] = [
-        {
-          query: { id: QueryId("q1"), text: QueryText("test") },
-          relevantChunkIds: [ChunkId("chunk1")],
-        },
-      ];
-
-      const result = await runExperiment({
-        name: "test",
-        evaluationType: "chunk-level",
-        corpus,
-        groundTruth,
-        retriever: mockRetriever,
-        k: 5,
-        metrics: [chunkRecall],
-      });
-
-      expect(Object.keys(result.metrics)).toEqual(["chunk_recall"]);
-    });
-  });
-
-  describe("token-level experiments", () => {
-    it("should run token-level experiment and return results", async () => {
-      const groundTruth: TokenLevelGroundTruth[] = [
+  describe("span-based experiments", () => {
+    it("should run experiment and return results", async () => {
+      const groundTruth: GroundTruth[] = [
         {
           query: { id: QueryId("q1"), text: QueryText("test query") },
           relevantSpans: [
@@ -99,7 +47,6 @@ describe("runExperiment", () => {
 
       const result = await runExperiment({
         name: "test-experiment",
-        evaluationType: "token-level",
         corpus,
         groundTruth,
         retriever: mockRetriever,
@@ -108,13 +55,13 @@ describe("runExperiment", () => {
 
       expect(result.experimentName).toBe("test-experiment");
       expect(result.retrieverName).toBe("mock-retriever");
-      expect(result.metrics).toHaveProperty("span_recall");
-      expect(result.metrics).toHaveProperty("span_precision");
-      expect(result.metrics).toHaveProperty("span_iou");
+      expect(result.metrics).toHaveProperty("recall");
+      expect(result.metrics).toHaveProperty("precision");
+      expect(result.metrics).toHaveProperty("iou");
     });
 
     it("should use custom metrics when provided", async () => {
-      const groundTruth: TokenLevelGroundTruth[] = [
+      const groundTruth: GroundTruth[] = [
         {
           query: { id: QueryId("q1"), text: QueryText("test") },
           relevantSpans: [
@@ -125,15 +72,14 @@ describe("runExperiment", () => {
 
       const result = await runExperiment({
         name: "test",
-        evaluationType: "token-level",
         corpus,
         groundTruth,
         retriever: mockRetriever,
         k: 5,
-        metrics: [spanRecall],
+        metrics: [recall],
       });
 
-      expect(Object.keys(result.metrics)).toEqual(["span_recall"]);
+      expect(Object.keys(result.metrics)).toEqual(["recall"]);
     });
   });
 
@@ -149,16 +95,15 @@ describe("runExperiment", () => {
         return Promise.resolve([]);
       });
 
-      const groundTruth: ChunkLevelGroundTruth[] = [
+      const groundTruth: GroundTruth[] = [
         {
           query: { id: QueryId("q1"), text: QueryText("test") },
-          relevantChunkIds: [],
+          relevantSpans: [],
         },
       ];
 
       await runExperiment({
         name: "test",
-        evaluationType: "chunk-level",
         corpus,
         groundTruth,
         retriever: mockRetriever,
@@ -171,16 +116,15 @@ describe("runExperiment", () => {
     });
 
     it("should call retriever.cleanup after completion", async () => {
-      const groundTruth: ChunkLevelGroundTruth[] = [
+      const groundTruth: GroundTruth[] = [
         {
           query: { id: QueryId("q1"), text: QueryText("test") },
-          relevantChunkIds: [],
+          relevantSpans: [],
         },
       ];
 
       await runExperiment({
         name: "test",
-        evaluationType: "chunk-level",
         corpus,
         groundTruth,
         retriever: mockRetriever,
@@ -193,17 +137,16 @@ describe("runExperiment", () => {
     it("should call retriever.cleanup even on error", async () => {
       mockRetriever.retrieve = vi.fn().mockRejectedValue(new Error("retrieve error"));
 
-      const groundTruth: ChunkLevelGroundTruth[] = [
+      const groundTruth: GroundTruth[] = [
         {
           query: { id: QueryId("q1"), text: QueryText("test") },
-          relevantChunkIds: [],
+          relevantSpans: [],
         },
       ];
 
       await expect(
         runExperiment({
           name: "test",
-          evaluationType: "chunk-level",
           corpus,
           groundTruth,
           retriever: mockRetriever,

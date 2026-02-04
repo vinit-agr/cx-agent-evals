@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
-import { QueryId, QueryText, ChunkId, DocumentId } from "../../../src/types/primitives.js";
-import type { ChunkLevelGroundTruth, TokenLevelGroundTruth } from "../../../src/types/index.js";
+import { QueryId, QueryText, DocumentId } from "../../../src/types/primitives.js";
+import type { GroundTruth } from "../../../src/types/index.js";
 
 // Mock the getLangSmithClient module
 vi.mock("../../../src/langsmith/get-client.js", () => ({
@@ -8,8 +8,8 @@ vi.mock("../../../src/langsmith/get-client.js", () => ({
 }));
 
 import { getLangSmithClient } from "../../../src/langsmith/get-client.js";
-import { uploadChunkLevelDataset, uploadTokenLevelDataset } from "../../../src/langsmith/upload.js";
-import { loadChunkLevelDataset, loadTokenLevelDataset } from "../../../src/langsmith/client.js";
+import { uploadDataset } from "../../../src/langsmith/upload.js";
+import { loadDataset } from "../../../src/langsmith/client.js";
 
 function createMockClient() {
   const store: Map<string, any[]> = new Map();
@@ -35,33 +35,11 @@ function createMockClient() {
 }
 
 describe("LangSmith upload/load round-trip", () => {
-  it("should round-trip chunk-level dataset", async () => {
+  it("should round-trip dataset", async () => {
     const mockClient = createMockClient();
     vi.mocked(getLangSmithClient).mockResolvedValue(mockClient);
 
-    const groundTruth: ChunkLevelGroundTruth[] = [
-      {
-        query: { id: QueryId("q_0"), text: QueryText("What is RAG?"), metadata: {} },
-        relevantChunkIds: [ChunkId("chunk_abc123")],
-      },
-    ];
-
-    await uploadChunkLevelDataset(groundTruth, "test-chunk");
-
-    expect(mockClient.createDataset).toHaveBeenCalledWith("test-chunk", expect.any(Object));
-    expect(mockClient.createExample).toHaveBeenCalledTimes(1);
-
-    const loaded = await loadChunkLevelDataset("test-chunk");
-    expect(loaded).toHaveLength(1);
-    expect(String(loaded[0].query.text)).toBe("What is RAG?");
-    expect(loaded[0].relevantChunkIds.map(String)).toEqual(["chunk_abc123"]);
-  });
-
-  it("should round-trip token-level dataset", async () => {
-    const mockClient = createMockClient();
-    vi.mocked(getLangSmithClient).mockResolvedValue(mockClient);
-
-    const groundTruth: TokenLevelGroundTruth[] = [
+    const groundTruth: GroundTruth[] = [
       {
         query: { id: QueryId("q_0"), text: QueryText("test?"), metadata: {} },
         relevantSpans: [
@@ -70,9 +48,9 @@ describe("LangSmith upload/load round-trip", () => {
       },
     ];
 
-    await uploadTokenLevelDataset(groundTruth, "test-token");
+    await uploadDataset(groundTruth, "test-dataset");
 
-    const loaded = await loadTokenLevelDataset("test-token");
+    const loaded = await loadDataset("test-dataset");
     expect(loaded).toHaveLength(1);
     expect(loaded[0].relevantSpans).toHaveLength(1);
     expect(loaded[0].relevantSpans[0].start).toBe(0);
@@ -80,11 +58,11 @@ describe("LangSmith upload/load round-trip", () => {
     expect(loaded[0].relevantSpans[0].text).toBe("x".repeat(50));
   });
 
-  it("should use default dataset name for chunk-level", async () => {
+  it("should use default dataset name", async () => {
     const mockClient = createMockClient();
     vi.mocked(getLangSmithClient).mockResolvedValue(mockClient);
 
-    await uploadChunkLevelDataset([], undefined);
-    expect(mockClient.createDataset).toHaveBeenCalledWith("rag-eval-chunk-level", expect.any(Object));
+    await uploadDataset([], undefined);
+    expect(mockClient.createDataset).toHaveBeenCalledWith("rag-eval-dataset", expect.any(Object));
   });
 });

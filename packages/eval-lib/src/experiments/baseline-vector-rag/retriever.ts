@@ -1,15 +1,13 @@
 import type { Corpus, PositionAwareChunk } from "../../types/index.js";
-import type { Chunker, PositionAwareChunker } from "../../chunkers/chunker.interface.js";
-import { isPositionAwareChunker } from "../../chunkers/chunker.interface.js";
+import type { PositionAwareChunker } from "../../chunkers/chunker.interface.js";
 import type { Embedder } from "../../embedders/embedder.interface.js";
 import type { VectorStore } from "../../vector-stores/vector-store.interface.js";
 import type { Reranker } from "../../rerankers/reranker.interface.js";
 import type { Retriever } from "../retriever.interface.js";
 import { InMemoryVectorStore } from "../../vector-stores/in-memory.js";
-import { generatePaChunkId } from "../../utils/hashing.js";
 
 export interface VectorRAGRetrieverConfig {
-  readonly chunker: Chunker | PositionAwareChunker;
+  readonly chunker: PositionAwareChunker;
   readonly embedder: Embedder;
   readonly vectorStore?: VectorStore;
   readonly reranker?: Reranker;
@@ -35,41 +33,15 @@ export class VectorRAGRetriever implements Retriever {
   async init(corpus: Corpus): Promise<void> {
     const { chunker, batchSize = 100 } = this._config;
 
-    // Step 1: Chunk corpus with document tracking
+    // Chunk corpus with document tracking using position-aware chunker
     const paChunks: PositionAwareChunk[] = [];
 
-    if (isPositionAwareChunker(chunker)) {
-      // Use position-aware chunker directly
-      for (const doc of corpus.documents) {
-        const chunks = chunker.chunkWithPositions(doc);
-        paChunks.push(...chunks);
-      }
-    } else {
-      // Basic chunker - compute positions manually
-      for (const doc of corpus.documents) {
-        const textChunks = chunker.chunk(doc.content);
-        let offset = 0;
-
-        for (const text of textChunks) {
-          const start = doc.content.indexOf(text, offset);
-          const actualStart = start >= 0 ? start : offset;
-          const end = actualStart + text.length;
-
-          paChunks.push({
-            id: generatePaChunkId(text),
-            content: text,
-            docId: doc.id,
-            start: actualStart,
-            end,
-            metadata: {},
-          });
-
-          offset = end;
-        }
-      }
+    for (const doc of corpus.documents) {
+      const chunks = chunker.chunkWithPositions(doc);
+      paChunks.push(...chunks);
     }
 
-    // Step 2: Embed and index in batches
+    // Embed and index in batches
     for (let i = 0; i < paChunks.length; i += batchSize) {
       const batch = paChunks.slice(i, i + batchSize);
       const embeddings = await this._embedder.embed(batch.map((c) => c.content));

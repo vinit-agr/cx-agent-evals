@@ -1,14 +1,14 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { VectorRAGRetriever } from "../../../src/experiments/baseline-vector-rag/retriever.js";
 import type { Corpus, PositionAwareChunk } from "../../../src/types/index.js";
-import type { Chunker } from "../../../src/chunkers/chunker.interface.js";
+import type { PositionAwareChunker } from "../../../src/chunkers/chunker.interface.js";
 import type { Embedder } from "../../../src/embedders/embedder.interface.js";
 import type { VectorStore } from "../../../src/vector-stores/vector-store.interface.js";
 import type { Reranker } from "../../../src/rerankers/reranker.interface.js";
-import { DocumentId } from "../../../src/types/primitives.js";
+import { DocumentId, PositionAwareChunkId } from "../../../src/types/primitives.js";
 
 describe("VectorRAGRetriever", () => {
-  let mockChunker: Chunker;
+  let mockChunker: PositionAwareChunker;
   let mockEmbedder: Embedder;
   let mockVectorStore: VectorStore;
   let mockReranker: Reranker;
@@ -17,7 +17,10 @@ describe("VectorRAGRetriever", () => {
   beforeEach(() => {
     mockChunker = {
       name: "mock-chunker",
-      chunk: vi.fn().mockReturnValue(["chunk1", "chunk2"]),
+      chunkWithPositions: vi.fn().mockReturnValue([
+        { id: PositionAwareChunkId("pa_1"), content: "chunk1", docId: DocumentId("doc1"), start: 0, end: 6, metadata: {} },
+        { id: PositionAwareChunkId("pa_2"), content: "chunk2", docId: DocumentId("doc1"), start: 7, end: 13, metadata: {} },
+      ] as PositionAwareChunk[]),
     };
 
     mockEmbedder = {
@@ -31,8 +34,8 @@ describe("VectorRAGRetriever", () => {
       name: "mock-store",
       add: vi.fn().mockResolvedValue(undefined),
       search: vi.fn().mockResolvedValue([
-        { id: "pa_chunk_1", content: "chunk1", docId: DocumentId("doc1"), start: 0, end: 6, metadata: {} },
-      ]),
+        { id: PositionAwareChunkId("pa_1"), content: "chunk1", docId: DocumentId("doc1"), start: 0, end: 6, metadata: {} },
+      ] as PositionAwareChunk[]),
       clear: vi.fn().mockResolvedValue(undefined),
     };
 
@@ -59,15 +62,21 @@ describe("VectorRAGRetriever", () => {
 
       await retriever.init(corpus);
 
-      expect(mockChunker.chunk).toHaveBeenCalledWith("chunk1 chunk2");
+      expect(mockChunker.chunkWithPositions).toHaveBeenCalledWith(corpus.documents[0]);
       expect(mockEmbedder.embed).toHaveBeenCalledWith(["chunk1", "chunk2"]);
       expect(mockVectorStore.add).toHaveBeenCalled();
     });
 
     it("should batch embeddings according to batchSize", async () => {
-      const largeChunker: Chunker = {
+      const largeChunker: PositionAwareChunker = {
         name: "large-chunker",
-        chunk: vi.fn().mockReturnValue(["c1", "c2", "c3", "c4", "c5"]),
+        chunkWithPositions: vi.fn().mockReturnValue([
+          { id: PositionAwareChunkId("pa_1"), content: "c1", docId: DocumentId("doc1"), start: 0, end: 2, metadata: {} },
+          { id: PositionAwareChunkId("pa_2"), content: "c2", docId: DocumentId("doc1"), start: 3, end: 5, metadata: {} },
+          { id: PositionAwareChunkId("pa_3"), content: "c3", docId: DocumentId("doc1"), start: 6, end: 8, metadata: {} },
+          { id: PositionAwareChunkId("pa_4"), content: "c4", docId: DocumentId("doc1"), start: 9, end: 11, metadata: {} },
+          { id: PositionAwareChunkId("pa_5"), content: "c5", docId: DocumentId("doc1"), start: 12, end: 14, metadata: {} },
+        ] as PositionAwareChunk[]),
       };
 
       const retriever = new VectorRAGRetriever({

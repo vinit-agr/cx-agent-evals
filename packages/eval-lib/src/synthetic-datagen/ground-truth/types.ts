@@ -1,4 +1,4 @@
-import type { Corpus, ChunkLevelGroundTruth, TokenLevelGroundTruth } from "../../types/index.js";
+import type { Corpus, GroundTruth } from "../../types/index.js";
 import type { LLMClient } from "../base.js";
 import type { GeneratedQuery } from "../strategies/types.js";
 
@@ -8,7 +8,7 @@ export interface GroundTruthAssignerContext {
   readonly model: string;
 }
 
-export interface GroundTruthAssigner<T> {
+export interface GroundTruthAssignerInterface<T> {
   readonly name: string;
   assign(
     queries: GeneratedQuery[],
@@ -16,5 +16,4 @@ export interface GroundTruthAssigner<T> {
   ): Promise<T[]>;
 }
 
-export type ChunkLevelAssigner = GroundTruthAssigner<ChunkLevelGroundTruth>;
-export type TokenLevelAssigner = GroundTruthAssigner<TokenLevelGroundTruth>;
+export type Assigner = GroundTruthAssignerInterface<GroundTruth>;

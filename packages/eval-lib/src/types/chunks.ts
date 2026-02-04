@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { DocumentId, ChunkId, PositionAwareChunkId } from "./primitives.js";
+import type { DocumentId, PositionAwareChunkId } from "./primitives.js";
 import { DocumentId as DocumentIdFactory } from "./primitives.js";
 
 export const CharacterSpanSchema = z
@@ -28,13 +28,6 @@ export interface SpanRange {
   readonly docId: DocumentId;
   readonly start: number;
   readonly end: number;
-}
-
-export interface Chunk {
-  readonly id: ChunkId;
-  readonly content: string;
-  readonly docId: DocumentId;
-  readonly metadata: Readonly<Record<string, unknown>>;
 }
 
 export interface PositionAwareChunk {

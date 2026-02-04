@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { DocumentId } from "../../../src/types/primitives.js";
 import type { CharacterSpan } from "../../../src/types/chunks.js";
-import { spanRecall } from "../../../src/evaluation/metrics/token-level/recall.js";
-import { spanPrecision } from "../../../src/evaluation/metrics/token-level/precision.js";
-import { spanIoU } from "../../../src/evaluation/metrics/token-level/iou.js";
-import { mergeOverlappingSpans } from "../../../src/evaluation/metrics/token-level/utils.js";
+import { recall } from "../../../src/evaluation/metrics/recall.js";
+import { precision } from "../../../src/evaluation/metrics/precision.js";
+import { iou } from "../../../src/evaluation/metrics/iou.js";
+import { mergeOverlappingSpans } from "../../../src/evaluation/metrics/utils.js";
 
 const span = (docId: string, start: number, end: number): CharacterSpan => ({
   docId: DocumentId(docId),
@@ -54,84 +54,84 @@ describe("mergeOverlappingSpans", () => {
   });
 });
 
-describe("spanRecall", () => {
+describe("recall", () => {
   it("should return 1.0 for perfect recall", () => {
     const gt = [span("doc1", 0, 100)];
     const retrieved = [span("doc1", 0, 100)];
-    expect(spanRecall.calculate(retrieved, gt)).toBe(1.0);
+    expect(recall.calculate(retrieved, gt)).toBe(1.0);
   });
 
   it("should return 0.5 for partial recall", () => {
     const gt = [span("doc1", 0, 100)];
     const retrieved = [span("doc1", 0, 50)];
-    expect(spanRecall.calculate(retrieved, gt)).toBe(0.5);
+    expect(recall.calculate(retrieved, gt)).toBe(0.5);
   });
 
   it("should return 0.0 for no overlap", () => {
     const gt = [span("doc1", 0, 100)];
     const retrieved = [span("doc1", 200, 300)];
-    expect(spanRecall.calculate(retrieved, gt)).toBe(0.0);
+    expect(recall.calculate(retrieved, gt)).toBe(0.0);
   });
 
   it("should return 1.0 for empty ground truth", () => {
-    expect(spanRecall.calculate([span("doc1", 0, 50)], [])).toBe(1.0);
+    expect(recall.calculate([span("doc1", 0, 50)], [])).toBe(1.0);
   });
 
   it("should return 1.0 for both empty", () => {
-    expect(spanRecall.calculate([], [])).toBe(1.0);
+    expect(recall.calculate([], [])).toBe(1.0);
   });
 
   it("should handle cross-document (no overlap)", () => {
     const gt = [span("doc1", 0, 100)];
     const retrieved = [span("doc2", 0, 100)];
-    expect(spanRecall.calculate(retrieved, gt)).toBe(0.0);
+    expect(recall.calculate(retrieved, gt)).toBe(0.0);
   });
 });
 
-describe("spanPrecision", () => {
+describe("precision", () => {
   it("should return 1.0 for perfect precision", () => {
     const gt = [span("doc1", 0, 100)];
     const retrieved = [span("doc1", 0, 100)];
-    expect(spanPrecision.calculate(retrieved, gt)).toBe(1.0);
+    expect(precision.calculate(retrieved, gt)).toBe(1.0);
   });
 
   it("should return 0.5 for over-retrieval", () => {
     const gt = [span("doc1", 0, 50)];
     const retrieved = [span("doc1", 0, 100)];
-    expect(spanPrecision.calculate(retrieved, gt)).toBe(0.5);
+    expect(precision.calculate(retrieved, gt)).toBe(0.5);
   });
 
   it("should return 0.0 for empty retrieved", () => {
-    expect(spanPrecision.calculate([], [span("doc1", 0, 100)])).toBe(0.0);
+    expect(precision.calculate([], [span("doc1", 0, 100)])).toBe(0.0);
   });
 });
 
-describe("spanIoU", () => {
+describe("iou", () => {
   it("should return 1.0 for perfect overlap", () => {
     const gt = [span("doc1", 0, 100)];
     const retrieved = [span("doc1", 0, 100)];
-    expect(spanIoU.calculate(retrieved, gt)).toBe(1.0);
+    expect(iou.calculate(retrieved, gt)).toBe(1.0);
   });
 
   it("should compute partial overlap IoU", () => {
     const gt = [span("doc1", 0, 100)];
     const retrieved = [span("doc1", 50, 150)];
     // Intersection: 50, Union: 150
-    expect(spanIoU.calculate(retrieved, gt)).toBeCloseTo(0.333, 2);
+    expect(iou.calculate(retrieved, gt)).toBeCloseTo(0.333, 2);
   });
 
   it("should return 1.0 for both empty", () => {
-    expect(spanIoU.calculate([], [])).toBe(1.0);
+    expect(iou.calculate([], [])).toBe(1.0);
   });
 
   it("should return 0.0 for one empty", () => {
-    expect(spanIoU.calculate([], [span("doc1", 0, 100)])).toBe(0.0);
-    expect(spanIoU.calculate([span("doc1", 0, 100)], [])).toBe(0.0);
+    expect(iou.calculate([], [span("doc1", 0, 100)])).toBe(0.0);
+    expect(iou.calculate([span("doc1", 0, 100)], [])).toBe(0.0);
   });
 
   it("should return 0.0 for no overlap", () => {
     expect(
-      spanIoU.calculate([span("doc1", 0, 50)], [span("doc1", 100, 200)]),
+      iou.calculate([span("doc1", 0, 50)], [span("doc1", 100, 200)]),
     ).toBe(0.0);
   });
 });

@@ -1,10 +1,7 @@
-export { ChunkLevelEvaluation } from "./chunk-level.js";
-export type { ChunkLevelEvaluationConfig, ChunkLevelRunOptions } from "./chunk-level.js";
-export { TokenLevelEvaluation } from "./token-level.js";
-export type { TokenLevelEvaluationConfig, TokenLevelRunOptions } from "./token-level.js";
-export type { ChunkLevelMetric, TokenLevelMetric } from "./metrics/base.js";
-export { chunkRecall, chunkPrecision, chunkF1 } from "./metrics/chunk-level/index.js";
-export { spanRecall, spanPrecision, spanIoU } from "./metrics/token-level/index.js";
-export { mergeOverlappingSpans, calculateOverlap } from "./metrics/token-level/utils.js";
-export { evaluateChunkLevel, evaluateTokenLevel } from "./evaluator.js";
-export type { ChunkLevelEvaluateOptions, TokenLevelEvaluateOptions } from "./evaluator.js";
+export { Evaluation } from "./evaluation.js";
+export type { EvaluationConfig, RunOptions } from "./evaluation.js";
+export type { Metric } from "./metrics/base.js";
+export { recall, precision, iou, f1 } from "./metrics/index.js";
+export { mergeOverlappingSpans, calculateOverlap, totalSpanLength } from "./metrics/utils.js";
+export { evaluate } from "./evaluator.js";
+export type { EvaluateOptions } from "./evaluator.js";

@@ -1,5 +1,5 @@
-import type { SpanRange } from "../../../types/chunks.js";
-import { spanOverlapChars, spanLength } from "../../../utils/span.js";
+import type { SpanRange } from "../../types/chunks.js";
+import { spanOverlapChars, spanLength } from "../../utils/span.js";
 
 export function mergeOverlappingSpans(spans: readonly SpanRange[]): SpanRange[] {
   if (spans.length === 0) return [];

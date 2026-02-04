@@ -1,4 +1,3 @@
-import type { ChunkId } from "./primitives.js";
 import type { CharacterSpan } from "./chunks.js";
 
 export interface EvaluationResult {
@@ -7,10 +6,6 @@ export interface EvaluationResult {
   readonly rawResults?: unknown;
 }
 
-export interface ChunkLevelRunOutput {
-  readonly retrievedChunkIds: readonly ChunkId[];
-}
-
-export interface TokenLevelRunOutput {
+export interface RunOutput {
   readonly retrievedSpans: readonly CharacterSpan[];
 }

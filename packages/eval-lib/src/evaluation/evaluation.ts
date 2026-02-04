@@ -1,43 +1,43 @@
-import type { Corpus, EvaluationResult, ChunkLevelGroundTruth } from "../types/index.js";
-import type { Chunker } from "../chunkers/chunker.interface.js";
+import type { Corpus, EvaluationResult, GroundTruth } from "../types/index.js";
+import type { PositionAwareChunker } from "../chunkers/chunker.interface.js";
 import type { Embedder } from "../embedders/embedder.interface.js";
 import type { VectorStore } from "../vector-stores/vector-store.interface.js";
 import type { Reranker } from "../rerankers/reranker.interface.js";
-import type { ChunkLevelMetric } from "./metrics/base.js";
-import { chunkRecall } from "./metrics/chunk-level/recall.js";
-import { chunkPrecision } from "./metrics/chunk-level/precision.js";
-import { chunkF1 } from "./metrics/chunk-level/f1.js";
+import type { Metric } from "./metrics/base.js";
+import { recall } from "./metrics/recall.js";
+import { precision } from "./metrics/precision.js";
+import { iou } from "./metrics/iou.js";
 import { VectorRAGRetriever } from "../experiments/baseline-vector-rag/retriever.js";
 import { runExperiment } from "../experiments/runner.js";
 
-export interface ChunkLevelEvaluationConfig {
+export interface EvaluationConfig {
   corpus: Corpus;
   langsmithDatasetName: string;
 }
 
-export interface ChunkLevelRunOptions {
-  chunker: Chunker;
+export interface RunOptions {
+  chunker: PositionAwareChunker;
   embedder: Embedder;
   k?: number;
   vectorStore?: VectorStore;
   reranker?: Reranker;
-  metrics?: ChunkLevelMetric[];
+  metrics?: Metric[];
   batchSize?: number;
-  groundTruth?: ChunkLevelGroundTruth[];
+  groundTruth?: GroundTruth[];
 }
 
-const DEFAULT_METRICS: ChunkLevelMetric[] = [chunkRecall, chunkPrecision, chunkF1];
+const DEFAULT_METRICS: Metric[] = [recall, precision, iou];
 
-export class ChunkLevelEvaluation {
+export class Evaluation {
   private _corpus: Corpus;
   private _datasetName: string;
 
-  constructor(config: ChunkLevelEvaluationConfig) {
+  constructor(config: EvaluationConfig) {
     this._corpus = config.corpus;
     this._datasetName = config.langsmithDatasetName;
   }
 
-  async run(options: ChunkLevelRunOptions): Promise<EvaluationResult> {
+  async run(options: RunOptions): Promise<EvaluationResult> {
     const { chunker, embedder, k = 5, vectorStore, reranker, batchSize } = options;
     const metrics = options.metrics ?? DEFAULT_METRICS;
 
@@ -55,8 +55,7 @@ export class ChunkLevelEvaluation {
 
     // Delegate to runExperiment
     const result = await runExperiment({
-      name: `chunk-level-eval-${this._datasetName}`,
-      evaluationType: "chunk-level",
+      name: `eval-${this._datasetName}`,
       corpus: this._corpus,
       groundTruth,
       retriever,
@@ -68,8 +67,8 @@ export class ChunkLevelEvaluation {
     return { metrics: result.metrics };
   }
 
-  private async _loadGroundTruth(): Promise<ChunkLevelGroundTruth[]> {
-    const { loadChunkLevelDataset } = await import("../langsmith/client.js");
-    return loadChunkLevelDataset(this._datasetName);
+  private async _loadGroundTruth(): Promise<GroundTruth[]> {
+    const { loadDataset } = await import("../langsmith/client.js");
+    return loadDataset(this._datasetName);
   }
 }

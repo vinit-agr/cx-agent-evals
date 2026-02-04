@@ -1,25 +1,13 @@
 import { z } from "zod";
-import type { ChunkId } from "./primitives.js";
 import type { Query } from "./queries.js";
 import type { CharacterSpan } from "./chunks.js";
 
-export interface ChunkLevelGroundTruth {
-  readonly query: Query;
-  readonly relevantChunkIds: readonly ChunkId[];
-}
-
-export interface TokenLevelGroundTruth {
+export interface GroundTruth {
   readonly query: Query;
   readonly relevantSpans: readonly CharacterSpan[];
 }
 
-export const ChunkLevelDatasetExampleSchema = z.object({
-  inputs: z.object({ query: z.string() }),
-  outputs: z.object({ relevantChunkIds: z.array(z.string()) }),
-  metadata: z.record(z.unknown()).default({}),
-});
-
-export const TokenLevelDatasetExampleSchema = z.object({
+export const DatasetExampleSchema = z.object({
   inputs: z.object({ query: z.string() }),
   outputs: z.object({
     relevantSpans: z.array(
@@ -34,13 +22,7 @@ export const TokenLevelDatasetExampleSchema = z.object({
   metadata: z.record(z.unknown()).default({}),
 });
 
-export interface ChunkLevelDatasetExample {
-  readonly inputs: { readonly query: string };
-  readonly outputs: { readonly relevantChunkIds: readonly string[] };
-  readonly metadata: Readonly<Record<string, unknown>>;
-}
-
-export interface TokenLevelDatasetExample {
+export interface DatasetExample {
   readonly inputs: { readonly query: string };
   readonly outputs: {
     readonly relevantSpans: ReadonlyArray<{

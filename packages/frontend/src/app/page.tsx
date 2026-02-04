@@ -2,17 +2,15 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { Header } from "@/components/Header";
-import { ModeSelect } from "@/components/ModeSelect";
 import { CorpusLoader } from "@/components/CorpusLoader";
 import { GenerateConfig, GenerateSettings } from "@/components/GenerateConfig";
 import { QuestionList } from "@/components/QuestionList";
 import { DocumentViewer } from "@/components/DocumentViewer";
 import { DimensionWizard } from "@/components/DimensionWizard";
 import { RealWorldQuestionsModal } from "@/components/RealWorldQuestionsModal";
-import { EvalMode, StrategyType, Dimension, DocumentInfo, GeneratedQuestion } from "@/lib/types";
+import { StrategyType, Dimension, DocumentInfo, GeneratedQuestion } from "@/lib/types";
 
 export default function Home() {
-  const [mode, setMode] = useState<EvalMode | null>(null);
   const [documents, setDocuments] = useState<DocumentInfo[]>([]);
   const [folderPath, setFolderPath] = useState("");
   const [questions, setQuestions] = useState<GeneratedQuestion[]>([]);
@@ -22,8 +20,6 @@ export default function Home() {
   const [genError, setGenError] = useState<string | null>(null);
   const [settings, setSettings] = useState<GenerateSettings>({
     questionsPerDoc: 10,
-    chunkSize: 1000,
-    chunkOverlap: 200,
   });
 
   // Strategy state
@@ -66,7 +62,6 @@ export default function Home() {
   }, []);
 
   function handleReset() {
-    setMode(null);
     setDocuments([]);
     setQuestions([]);
     setSelectedQuestion(null);
@@ -116,7 +111,7 @@ export default function Home() {
   }
 
   const handleGenerate = useCallback(async () => {
-    if (!mode || !folderPath || generating) return;
+    if (!folderPath || generating) return;
 
     setGenerating(true);
     setQuestions([]);
@@ -128,14 +123,7 @@ export default function Home() {
     try {
       const body: Record<string, unknown> = {
         folderPath,
-        mode,
         strategy,
-        ...(mode === "chunk"
-          ? {
-              chunkSize: settings.chunkSize,
-              chunkOverlap: settings.chunkOverlap,
-            }
-          : {}),
       };
 
       if (strategy === "simple") {
@@ -207,8 +195,6 @@ export default function Home() {
                 {
                   docId: event.docId,
                   query: event.query,
-                  relevantChunkIds: event.relevantChunkIds,
-                  chunks: event.chunks,
                   relevantSpans: event.relevantSpans,
                 },
               ]);
@@ -229,7 +215,7 @@ export default function Home() {
     } finally {
       setGenerating(false);
     }
-  }, [mode, folderPath, generating, settings, strategy, dimensions, totalQuestions, realWorldQuestions, totalSyntheticQuestions]);
+  }, [folderPath, generating, settings, strategy, dimensions, totalQuestions, realWorldQuestions, totalSyntheticQuestions]);
 
   // Find selected question's document
   const selectedQ = selectedQuestion !== null ? questions[selectedQuestion] : null;
@@ -237,23 +223,13 @@ export default function Home() {
     ? documents.find((d) => d.id === selectedQ.docId) ?? null
     : null;
 
-  // Mode selection screen
-  if (!mode) {
-    return (
-      <>
-        <Header mode={null} onReset={handleReset} />
-        <ModeSelect onSelect={setMode} />
-      </>
-    );
-  }
-
   // Main workspace
   const hasDocuments = documents.length > 0;
   const hasQuestions = questions.length > 0;
 
   return (
     <div className="flex flex-col h-screen">
-      <Header mode={mode} onReset={handleReset} />
+      <Header onReset={handleReset} />
 
       <div className="flex flex-1 overflow-hidden max-w-full">
         {/* Left sidebar: corpus + config */}
@@ -264,7 +240,6 @@ export default function Home() {
             {hasDocuments && (
               <div className="pt-2 border-t border-border">
                 <GenerateConfig
-                  mode={mode}
                   settings={settings}
                   onChange={setSettings}
                   onGenerate={handleGenerate}
@@ -307,7 +282,7 @@ export default function Home() {
 
         {/* Right: document viewer */}
         <div className="flex-1 min-w-0 bg-bg overflow-hidden">
-          <DocumentViewer doc={selectedDoc} question={selectedQ} mode={mode} />
+          <DocumentViewer doc={selectedDoc} question={selectedQ} />
         </div>
       </div>
 

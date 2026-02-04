@@ -1,9 +1,9 @@
-import type { CharacterSpan } from "../../../types/chunks.js";
-import type { TokenLevelMetric } from "../base.js";
+import type { CharacterSpan } from "../../types/chunks.js";
+import type { Metric } from "./base.js";
 import { calculateOverlap, totalSpanLength } from "./utils.js";
 
-export const spanIoU: TokenLevelMetric = {
-  name: "span_iou" as const,
+export const iou: Metric = {
+  name: "iou" as const,
   calculate(retrieved: readonly CharacterSpan[], groundTruth: readonly CharacterSpan[]): number {
     if (retrieved.length === 0 && groundTruth.length === 0) return 1.0;
     if (retrieved.length === 0 || groundTruth.length === 0) return 0.0;
