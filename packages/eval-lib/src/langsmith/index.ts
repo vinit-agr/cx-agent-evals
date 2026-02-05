@@ -2,3 +2,6 @@ export { getLangSmithClient } from "./get-client.js";
 export { uploadDataset } from "./upload.js";
 export type { UploadOptions, UploadResult, UploadProgress } from "./upload.js";
 export { loadDataset } from "./client.js";
+export { createLangSmithEvaluator, createLangSmithEvaluators } from "./evaluator-adapters.js";
+export { runLangSmithExperiment } from "./experiment-runner.js";
+export type { LangSmithExperimentConfig } from "./experiment-runner.js";

@@ -23,6 +23,10 @@
     "./rerankers/cohere": {
       "import": "./dist/rerankers/cohere.js",
       "types": "./dist/rerankers/cohere.d.ts"
+    },
+    "./langsmith/experiment-runner": {
+      "import": "./dist/langsmith/experiment-runner.js",
+      "types": "./dist/langsmith/experiment-runner.d.ts"
     }
   },
   "files": [
@@ -57,11 +61,6 @@
   },
   "peerDependencies": {
     "langsmith": ">=0.1.0"
-  },
-  "peerDependenciesMeta": {
-    "langsmith": {
-      "optional": true
-    }
   },
   "optionalDependencies": {
     "chromadb": ">=1.8",

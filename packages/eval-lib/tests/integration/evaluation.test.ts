@@ -1,11 +1,18 @@
-import { describe, it, expect } from "vitest";
-import { Evaluation } from "../../src/evaluation/evaluation.js";
+import { describe, it, expect, vi } from "vitest";
+import { runLangSmithExperiment } from "../../src/langsmith/experiment-runner.js";
+import { VectorRAGRetriever } from "../../src/experiments/baseline-vector-rag/retriever.js";
 import { RecursiveCharacterChunker } from "../../src/chunkers/recursive-character.js";
 import { InMemoryVectorStore } from "../../src/vector-stores/in-memory.js";
 import { createDocument, createCorpus } from "../../src/types/documents.js";
-import { QueryId, QueryText, DocumentId } from "../../src/types/primitives.js";
 import { mockEmbedder } from "../fixtures.js";
-import type { GroundTruth } from "../../src/types/index.js";
+
+// Mock the langsmith/evaluation module
+vi.mock("langsmith/evaluation", () => ({
+  evaluate: vi.fn().mockResolvedValue({
+    experimentName: "integration-test",
+    results: [],
+  }),
+}));
 
 const content =
   "Retrieval-Augmented Generation (RAG) combines retrieval with generation. " +
@@ -18,71 +25,67 @@ const corpus = createCorpus([doc]);
 const chunker = new RecursiveCharacterChunker({ chunkSize: 80, chunkOverlap: 0 });
 const embedder = mockEmbedder(64);
 
-describe("Evaluation", () => {
-  it("should run end-to-end with provided ground truth", async () => {
-    const groundTruth: GroundTruth[] = [
-      {
-        query: {
-          id: QueryId("q_0"),
-          text: QueryText("What does RAG combine?"),
-          metadata: {},
-        },
-        relevantSpans: [
-          {
-            docId: DocumentId("rag.md"),
-            start: 0,
-            end: 73,
-            text: content.slice(0, 73),
-          },
-        ],
-      },
-    ];
+describe("runLangSmithExperiment integration", () => {
+  it("should initialize VectorRAGRetriever and call langsmith evaluate", async () => {
+    const { evaluate } = await import("langsmith/evaluation");
 
-    const evaluation = new Evaluation({
-      corpus,
-      langsmithDatasetName: "test",
-    });
-
-    const result = await evaluation.run({
+    const retriever = new VectorRAGRetriever({
       chunker,
       embedder,
-      k: 3,
       vectorStore: new InMemoryVectorStore(),
-      groundTruth,
     });
 
-    expect(result.metrics).toHaveProperty("recall");
-    expect(result.metrics).toHaveProperty("precision");
-    expect(result.metrics).toHaveProperty("iou");
-    expect(result.metrics.recall).toBeGreaterThanOrEqual(0);
+    await runLangSmithExperiment({
+      corpus,
+      retriever,
+      k: 3,
+      datasetName: "test-dataset",
+      experimentPrefix: "integration-test",
+    });
+
+    expect(evaluate).toHaveBeenCalledWith(
+      expect.any(Function),
+      expect.objectContaining({
+        data: "test-dataset",
+        experimentPrefix: "integration-test",
+        evaluators: expect.any(Array),
+      }),
+    );
   });
 
-  it("should clean up vector store after run", async () => {
-    const store = new InMemoryVectorStore();
-    const groundTruth: GroundTruth[] = [
-      {
-        query: { id: QueryId("q_0"), text: QueryText("test"), metadata: {} },
-        relevantSpans: [
-          { docId: DocumentId("rag.md"), start: 0, end: 50, text: content.slice(0, 50) },
-        ],
+  it("should pass target function that returns retrievedSpans", async () => {
+    const { evaluate } = await import("langsmith/evaluation");
+    let targetResult: any;
+
+    (evaluate as ReturnType<typeof vi.fn>).mockImplementationOnce(
+      async (target: Function, _options: unknown) => {
+        // Call target during evaluate (before cleanup)
+        targetResult = await target({ query: "What is RAG?" });
+        return { experimentName: "test", results: [] };
       },
-    ];
+    );
 
-    const evaluation = new Evaluation({
-      corpus,
-      langsmithDatasetName: "test",
-    });
-
-    await evaluation.run({
+    const retriever = new VectorRAGRetriever({
       chunker,
       embedder,
-      k: 1,
-      vectorStore: store,
-      groundTruth,
+      vectorStore: new InMemoryVectorStore(),
     });
 
-    // Store should be cleared
-    const results = await store.search(await embedder.embedQuery("test"), 5);
-    expect(results).toHaveLength(0);
+    await runLangSmithExperiment({
+      corpus,
+      retriever,
+      k: 3,
+      datasetName: "test-dataset",
+    });
+
+    expect(targetResult).toHaveProperty("retrievedSpans");
+    expect(Array.isArray(targetResult.retrievedSpans)).toBe(true);
+    if (targetResult.retrievedSpans.length > 0) {
+      const span = targetResult.retrievedSpans[0];
+      expect(span).toHaveProperty("docId");
+      expect(span).toHaveProperty("start");
+      expect(span).toHaveProperty("end");
+      expect(span).toHaveProperty("text");
+    }
   });
 });

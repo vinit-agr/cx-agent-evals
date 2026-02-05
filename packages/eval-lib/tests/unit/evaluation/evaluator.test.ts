@@ -1,10 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { evaluate } from "../../../src/evaluation/evaluator.js";
+import { computeMetrics } from "../../../src/evaluation/evaluator.js";
 import { recall, precision, iou } from "../../../src/evaluation/metrics/index.js";
 import { DocumentId } from "../../../src/types/primitives.js";
 import type { CharacterSpan } from "../../../src/types/chunks.js";
 
-describe("evaluate", () => {
+describe("computeMetrics", () => {
   const metrics = [recall, precision, iou];
   const docId = DocumentId("doc1");
 
@@ -24,7 +24,7 @@ describe("evaluate", () => {
       },
     ];
 
-    const scores = evaluate({ results, metrics });
+    const scores = computeMetrics({ results, metrics });
 
     // First result: recall=1, precision=1, iou=1
     // Second result: recall=0.5, precision=1, iou=0.5
@@ -35,7 +35,7 @@ describe("evaluate", () => {
   });
 
   it("should return zeros for empty results", () => {
-    const scores = evaluate({ results: [], metrics });
+    const scores = computeMetrics({ results: [], metrics });
 
     expect(scores.recall).toBe(0);
     expect(scores.precision).toBe(0);
@@ -50,7 +50,7 @@ describe("evaluate", () => {
       },
     ];
 
-    const scores = evaluate({ results, metrics });
+    const scores = computeMetrics({ results, metrics });
 
     // overlap = 50 chars (50-100)
     // recall = 50/100 = 0.5

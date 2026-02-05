@@ -48,25 +48,18 @@ export { InMemoryVectorStore } from "./vector-stores/index.js";
 export type { Reranker } from "./rerankers/index.js";
 
 // Evaluation
-export { Evaluation } from "./evaluation/index.js";
-export type {
-  EvaluationConfig,
-  RunOptions,
-  Metric,
-} from "./evaluation/index.js";
-export { evaluate } from "./evaluation/index.js";
-export type { EvaluateOptions } from "./evaluation/index.js";
+export type { Metric } from "./evaluation/index.js";
+export { computeMetrics } from "./evaluation/index.js";
+export type { ComputeMetricsOptions } from "./evaluation/index.js";
 
 // Metrics
 export { recall, precision, iou, f1 } from "./evaluation/metrics/index.js";
 export { mergeOverlappingSpans, calculateOverlap, totalSpanLength } from "./evaluation/metrics/utils.js";
 
 // Experiments
-export { runExperiment, VectorRAGRetriever } from "./experiments/index.js";
+export { VectorRAGRetriever } from "./experiments/index.js";
 export type {
   Retriever,
-  ExperimentConfig,
-  ExperimentResult,
   VectorRAGRetrieverConfig,
 } from "./experiments/index.js";
 
@@ -105,12 +98,20 @@ export {
   getLangSmithClient,
   uploadDataset,
   loadDataset,
+  createLangSmithEvaluator,
+  createLangSmithEvaluators,
 } from "./langsmith/index.js";
 export type {
   UploadOptions,
   UploadResult,
   UploadProgress,
 } from "./langsmith/index.js";
+
+// LangSmith experiment runner is available via:
+//   import { runLangSmithExperiment } from "rag-evaluation-system/langsmith"
+// It is NOT re-exported from the main index to avoid pulling langsmith
+// into the module graph for consumers that don't need experiment running.
+export type { LangSmithExperimentConfig } from "./langsmith/index.js";
 
 // Utils
 export { generatePaChunkId } from "./utils/hashing.js";

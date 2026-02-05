@@ -1,7 +1,7 @@
 import type { CharacterSpan } from "../types/chunks.js";
 import type { Metric } from "./metrics/base.js";
 
-export interface EvaluateOptions {
+export interface ComputeMetricsOptions {
   readonly results: ReadonlyArray<{
     readonly retrieved: readonly CharacterSpan[];
     readonly groundTruth: readonly CharacterSpan[];
@@ -10,10 +10,10 @@ export interface EvaluateOptions {
 }
 
 /**
- * Pure function to evaluate retrieval results.
+ * Pure function to compute retrieval metrics.
  * Computes each metric for each result and returns averaged scores.
  */
-export function evaluate(options: EvaluateOptions): Record<string, number> {
+export function computeMetrics(options: ComputeMetricsOptions): Record<string, number> {
   const { results, metrics } = options;
 
   if (results.length === 0) {
