@@ -37,3 +37,16 @@ export type SSEEvent =
   | { type: "question"; data: GeneratedQuestion }
   | { type: "done"; totalQuestions: number }
   | { type: "error"; error: string };
+
+export interface UploadMetadata {
+  strategy: StrategyType;
+  folderPath: string;
+  questionsPerDoc?: number;
+  dimensions?: Dimension[];
+  totalQuestions?: number;
+}
+
+export type UploadSSEEvent =
+  | { type: "progress"; uploaded: number; total: number; failed: number }
+  | { type: "done"; datasetName: string; datasetUrl: string; uploaded: number; failed: number }
+  | { type: "error"; error: string };

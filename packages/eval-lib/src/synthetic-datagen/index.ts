@@ -51,7 +51,7 @@ export async function generate(options: GenerateOptions): Promise<GroundTruth[]>
 
   if (options.uploadToLangsmith) {
     const { uploadDataset } = await import("../langsmith/upload.js");
-    await uploadDataset(results, options.datasetName);
+    await uploadDataset(results, { datasetName: options.datasetName });
   }
 
   return results;

@@ -9,6 +9,7 @@ export function QuestionList({
   generating,
   totalDone,
   phaseStatus,
+  onUpload,
 }: {
   questions: GeneratedQuestion[];
   selectedIndex: number | null;
@@ -16,6 +17,7 @@ export function QuestionList({
   generating: boolean;
   totalDone: number | null;
   phaseStatus?: string | null;
+  onUpload?: () => void;
 }) {
   // Group by docId
   const grouped = new Map<string, { question: GeneratedQuestion; index: number }[]>();
@@ -124,6 +126,18 @@ export function QuestionList({
           </div>
         ))}
       </div>
+
+      {/* Upload footer */}
+      {questions.length > 0 && !generating && onUpload && (
+        <div className="flex-shrink-0 px-3 py-2.5 border-t border-border bg-bg-elevated/50">
+          <button
+            onClick={onUpload}
+            className="w-full px-3 py-1.5 text-xs font-medium text-accent border border-accent/30 rounded hover:bg-accent/10 transition-colors cursor-pointer"
+          >
+            Upload to LangSmith
+          </button>
+        </div>
+      )}
     </div>
   );
 }

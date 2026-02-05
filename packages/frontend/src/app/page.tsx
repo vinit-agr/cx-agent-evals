@@ -8,6 +8,7 @@ import { QuestionList } from "@/components/QuestionList";
 import { DocumentViewer } from "@/components/DocumentViewer";
 import { DimensionWizard } from "@/components/DimensionWizard";
 import { RealWorldQuestionsModal } from "@/components/RealWorldQuestionsModal";
+import { UploadDatasetModal } from "@/components/UploadDatasetModal";
 import { StrategyType, Dimension, DocumentInfo, GeneratedQuestion } from "@/lib/types";
 
 export default function Home() {
@@ -32,6 +33,7 @@ export default function Home() {
   const [realWorldQuestions, setRealWorldQuestions] = useState<string[]>([]);
   const [totalSyntheticQuestions, setTotalSyntheticQuestions] = useState(50);
   const [realWorldModalOpen, setRealWorldModalOpen] = useState(false);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
   // Load saved configs from localStorage on mount
   useEffect(() => {
@@ -276,6 +278,7 @@ export default function Home() {
               generating={generating}
               totalDone={totalDone}
               phaseStatus={phaseStatus}
+              onUpload={() => setUploadModalOpen(true)}
             />
           </div>
         )}
@@ -303,6 +306,20 @@ export default function Home() {
           initialQuestions={realWorldQuestions}
           onSave={handleRealWorldSave}
           onClose={() => setRealWorldModalOpen(false)}
+        />
+      )}
+
+      {/* Upload to LangSmith Modal */}
+      {uploadModalOpen && (
+        <UploadDatasetModal
+          questions={questions}
+          strategy={strategy}
+          folderPath={folderPath}
+          documents={documents}
+          dimensions={strategy === "dimension-driven" ? dimensions : undefined}
+          questionsPerDoc={strategy === "simple" ? settings.questionsPerDoc : undefined}
+          totalQuestions={strategy === "dimension-driven" ? totalQuestions : undefined}
+          onClose={() => setUploadModalOpen(false)}
         />
       )}
     </div>

@@ -1,8 +1,4 @@
-## Purpose
-
-Upload and load evaluation datasets to/from LangSmith.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Upload dataset to LangSmith
 The system SHALL provide `uploadDataset(groundTruth: GroundTruth[], options?: UploadOptions): Promise<UploadResult>` that creates a LangSmith dataset and uploads examples in batches. `UploadOptions` SHALL include `datasetName` (optional, defaults to `"rag-eval-dataset"`), `description` (optional, for dataset description with generation metadata), `batchSize` (optional, defaults to 20), `maxRetries` (optional, defaults to 3), and `onProgress` (optional callback). `UploadResult` SHALL include `datasetName`, `datasetUrl` (direct link to LangSmith UI), `uploaded` (count of successful examples), and `failed` (count of failed examples). The `langsmith` package SHALL be loaded via dynamic `import()`. Examples SHALL be created using the SDK's bulk `createExamples()` method. Each batch that fails SHALL be retried up to `maxRetries` times before being counted as failed. The dataset URL SHALL be constructed as `${client.getHostUrl()}/datasets/${dataset.id}`.
@@ -38,17 +34,3 @@ The system SHALL provide `uploadDataset(groundTruth: GroundTruth[], options?: Up
 #### Scenario: Dataset URL returned
 - **WHEN** upload completes
 - **THEN** `UploadResult.datasetUrl` SHALL be a valid URL to the dataset in the LangSmith web UI
-
-### Requirement: Load dataset from LangSmith
-The system SHALL provide `loadDataset(datasetName: string): Promise<GroundTruth[]>` that reads all examples from a LangSmith dataset and returns parsed `GroundTruth` objects with validated `CharacterSpan` values.
-
-#### Scenario: Load and parse examples
-- **WHEN** calling `loadDataset("my-dataset")`
-- **THEN** the result SHALL be an array of `GroundTruth` with properly typed spans
-
-### Requirement: LangSmith client shared initialization
-The system SHALL provide a shared `getLangSmithClient()` function that loads the `langsmith` package via dynamic `import()` and returns a `Client` instance. It SHALL throw a descriptive error if the package is not installed.
-
-#### Scenario: Missing langsmith package
-- **WHEN** `getLangSmithClient()` is called and `langsmith` is not installed
-- **THEN** it SHALL throw an error with installation instructions

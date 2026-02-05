@@ -106,6 +106,11 @@ export {
   uploadDataset,
   loadDataset,
 } from "./langsmith/index.js";
+export type {
+  UploadOptions,
+  UploadResult,
+  UploadProgress,
+} from "./langsmith/index.js";
 
 // Utils
 export { generatePaChunkId } from "./utils/hashing.js";
