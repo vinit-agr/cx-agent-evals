@@ -10,6 +10,7 @@ export interface UploadProgress {
 export interface UploadOptions {
   datasetName?: string;
   description?: string;
+  metadata?: Record<string, unknown>;
   batchSize?: number;
   maxRetries?: number;
   onProgress?: (progress: UploadProgress) => void;
@@ -35,6 +36,7 @@ export async function uploadDataset(
   const dataset = await client.createDataset(name, {
     description:
       options?.description ?? "RAG evaluation ground truth (character spans)",
+    metadata: options?.metadata,
   });
 
   const datasetUrl = `${client.getHostUrl()}/datasets/${dataset.id}`;
