@@ -5,3 +5,5 @@ export { loadDataset } from "./client.js";
 export { createLangSmithEvaluator, createLangSmithEvaluators } from "./evaluator-adapters.js";
 export { runLangSmithExperiment } from "./experiment-runner.js";
 export type { LangSmithExperimentConfig } from "./experiment-runner.js";
+export { listDatasets, listExperiments, getCompareUrl } from "./datasets.js";
+export type { DatasetInfo, ExperimentInfo } from "./datasets.js";

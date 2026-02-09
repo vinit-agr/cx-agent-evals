@@ -110,6 +110,13 @@ export async function POST(request: NextRequest) {
         const result = await uploadDataset(groundTruth, {
           datasetName,
           description,
+          metadata: {
+            folderPath: metadata?.folderPath,
+            strategy: metadata?.strategy,
+            questionsPerDoc: metadata?.questionsPerDoc,
+            totalQuestions: metadata?.totalQuestions,
+            dimensions: metadata?.dimensions,
+          },
           onProgress: (progress) => {
             send({
               type: "progress",

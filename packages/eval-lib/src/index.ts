@@ -100,11 +100,16 @@ export {
   loadDataset,
   createLangSmithEvaluator,
   createLangSmithEvaluators,
+  listDatasets,
+  listExperiments,
+  getCompareUrl,
 } from "./langsmith/index.js";
 export type {
   UploadOptions,
   UploadResult,
   UploadProgress,
+  DatasetInfo,
+  ExperimentInfo,
 } from "./langsmith/index.js";
 
 // LangSmith experiment runner is available via:
