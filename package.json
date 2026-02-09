@@ -1,5 +1,5 @@
 {
-  "name": "rag-and-agent-evals",
+  "name": "cx-agent-evals",
   "private": true,
   "scripts": {
     "build": "pnpm -C packages/eval-lib build",
