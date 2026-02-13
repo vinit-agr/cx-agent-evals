@@ -201,7 +201,7 @@ describe("runLangSmithExperiment", () => {
       });
 
       const result = await capturedTarget!({ query: "test query" });
-      expect(result.retrievedSpans).toEqual([
+      expect(result.relevantSpans).toEqual([
         {
           docId: "doc1",
           start: 0,

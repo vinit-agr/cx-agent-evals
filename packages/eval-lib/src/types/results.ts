@@ -7,5 +7,5 @@ export interface EvaluationResult {
 }
 
 export interface RunOutput {
-  readonly retrievedSpans: readonly CharacterSpan[];
+  readonly relevantSpans: readonly CharacterSpan[];
 }

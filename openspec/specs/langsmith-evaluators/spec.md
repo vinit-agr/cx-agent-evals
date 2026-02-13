@@ -5,10 +5,10 @@ Vendor-agnostic adapter layer that wraps pure Metric functions into LangSmith ev
 ## Requirements
 
 ### Requirement: Create LangSmith evaluator from Metric
-The system SHALL provide a `createLangSmithEvaluator(metric: Metric)` function that returns a LangSmith evaluator function. The returned evaluator SHALL accept a `run` object and an `example` object, extract `retrievedSpans` from `run.outputs` and `relevantSpans` from `example.outputs`, deserialize them into typed `CharacterSpan[]` arrays, call `metric.calculate(retrieved, groundTruth)`, and return `{ key: metric.name, score }`.
+The system SHALL provide a `createLangSmithEvaluator(metric: Metric)` function that returns a LangSmith evaluator function. The returned evaluator SHALL accept a `run` object and an `example` object, extract `relevantSpans` from `run.outputs` and `relevantSpans` from `example.outputs`, deserialize them into typed `CharacterSpan[]` arrays, call `metric.calculate(retrieved, groundTruth)`, and return `{ key: metric.name, score }`.
 
 #### Scenario: Wrap recall metric as LangSmith evaluator
-- **WHEN** calling `createLangSmithEvaluator(recall)` and invoking the result with a run containing `outputs.retrievedSpans` and an example containing `outputs.relevantSpans`
+- **WHEN** calling `createLangSmithEvaluator(recall)` and invoking the result with a run containing `outputs.relevantSpans` and an example containing `outputs.relevantSpans`
 - **THEN** the evaluator SHALL return `{ key: "recall", score: <calculated recall value> }`
 
 #### Scenario: Wrap any custom metric
@@ -16,7 +16,7 @@ The system SHALL provide a `createLangSmithEvaluator(metric: Metric)` function t
 - **THEN** the returned evaluator SHALL use `"my-metric"` as the `key` in its result
 
 #### Scenario: Deserialize spans from plain JSON
-- **WHEN** the evaluator receives `run.outputs.retrievedSpans` as plain JSON objects `[{docId, start, end, text}]`
+- **WHEN** the evaluator receives `run.outputs.relevantSpans` as plain JSON objects `[{docId, start, end, text}]`
 - **THEN** it SHALL convert them to typed `CharacterSpan[]` with branded `DocumentId` values before passing to `metric.calculate()`
 
 ### Requirement: Create multiple LangSmith evaluators from Metric array

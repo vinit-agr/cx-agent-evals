@@ -34,7 +34,7 @@ export async function runLangSmithExperiment(config: LangSmithExperimentConfig):
     const target = async (inputs: { query: string }) => {
       const chunks = await retriever.retrieve(inputs.query, k);
       return {
-        retrievedSpans: chunks.map((chunk) => {
+        relevantSpans: chunks.map((chunk) => {
           const span = positionAwareChunkToSpan(chunk);
           return {
             docId: String(span.docId),
