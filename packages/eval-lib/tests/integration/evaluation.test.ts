@@ -53,7 +53,7 @@ describe("runLangSmithExperiment integration", () => {
     );
   });
 
-  it("should pass target function that returns retrievedSpans", async () => {
+  it("should pass target function that returns relevantSpans", async () => {
     const { evaluate } = await import("langsmith/evaluation");
     let targetResult: any;
 
@@ -78,10 +78,10 @@ describe("runLangSmithExperiment integration", () => {
       datasetName: "test-dataset",
     });
 
-    expect(targetResult).toHaveProperty("retrievedSpans");
-    expect(Array.isArray(targetResult.retrievedSpans)).toBe(true);
-    if (targetResult.retrievedSpans.length > 0) {
-      const span = targetResult.retrievedSpans[0];
+    expect(targetResult).toHaveProperty("relevantSpans");
+    expect(Array.isArray(targetResult.relevantSpans)).toBe(true);
+    if (targetResult.relevantSpans.length > 0) {
+      const span = targetResult.relevantSpans[0];
       expect(span).toHaveProperty("docId");
       expect(span).toHaveProperty("start");
       expect(span).toHaveProperty("end");

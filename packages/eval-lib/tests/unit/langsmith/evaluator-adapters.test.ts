@@ -11,11 +11,11 @@ describe("createLangSmithEvaluator", () => {
   const docId = "doc1";
 
   function makeArgs(
-    retrievedSpans: Array<{ docId: string; start: number; end: number; text: string }>,
+    generatedSpans: Array<{ docId: string; start: number; end: number; text: string }>,
     relevantSpans: Array<{ docId: string; start: number; end: number; text: string }>,
   ) {
     return {
-      outputs: { retrievedSpans },
+      outputs: { relevantSpans: generatedSpans },
       referenceOutputs: { relevantSpans },
     };
   }
@@ -102,7 +102,7 @@ describe("createLangSmithEvaluators", () => {
   it("should preserve metric names in order", () => {
     const evaluators = createLangSmithEvaluators([recall, precision, iou, f1]);
     const args = {
-      outputs: { retrievedSpans: [] },
+      outputs: { relevantSpans: [] },
       referenceOutputs: { relevantSpans: [] },
     };
     const keys = evaluators.map((ev) => ev(args).key);

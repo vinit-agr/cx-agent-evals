@@ -20,11 +20,11 @@ The system SHALL provide an async `runLangSmithExperiment(config: LangSmithExper
 - **THEN** `retriever.cleanup()` SHALL still be called (via finally block)
 
 ### Requirement: Target function shape
-The target function passed to LangSmith's `evaluate()` SHALL accept `{ query: string }` as input and return `{ retrievedSpans: Array<{ docId: string, start: number, end: number, text: string }> }`. It SHALL call `retriever.retrieve(query, k)` and convert the resulting `PositionAwareChunk[]` to serialized span objects.
+The target function passed to LangSmith's `evaluate()` SHALL accept `{ query: string }` as input and return `{ relevantSpans: Array<{ docId: string, start: number, end: number, text: string }> }`. It SHALL call `retriever.retrieve(query, k)` and convert the resulting `PositionAwareChunk[]` to serialized span objects.
 
 #### Scenario: Target function retrieves and serializes
 - **WHEN** LangSmith calls the target function with `{ query: "What is X?" }`
-- **THEN** it SHALL call `retriever.retrieve("What is X?", k)` and return the chunks converted to span objects in `retrievedSpans`
+- **THEN** it SHALL call `retriever.retrieve("What is X?", k)` and return the chunks converted to span objects in `relevantSpans`
 
 ### Requirement: Experiment naming
 The experiment SHALL be named using `experimentPrefix` if provided. If not provided, the system SHALL generate a prefix from the retriever's `name` property. Experiment metadata SHALL include the retriever name, k value, corpus size, and any user-provided metadata.

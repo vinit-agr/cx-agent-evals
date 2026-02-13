@@ -24,7 +24,7 @@ export function createLangSmithEvaluator(metric: Metric) {
     outputs?: Record<string, unknown>;
     referenceOutputs?: Record<string, unknown>;
   }) => {
-    const retrieved = deserializeSpans(args.outputs?.retrievedSpans);
+    const retrieved = deserializeSpans(args.outputs?.relevantSpans);
     const groundTruth = deserializeSpans(args.referenceOutputs?.relevantSpans);
     const score = metric.calculate(retrieved, groundTruth);
     return { key: metric.name, score };
