@@ -1,5 +1,24 @@
 {
   "name": "@rag-eval/backend",
   "version": "0.1.0",
-  "private": true
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "typecheck": "tsc --noEmit -p convex/tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "convex": "^1.21.0",
+    "openai": "^4.70.0",
+    "rag-evaluation-system": "workspace:*"
+  },
+  "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
+    "@types/node": "^25.2.3",
+    "convex-test": "^0.0.41",
+    "typescript": "^5.4",
+    "vitest": "^1.6.1"
+  }
 }

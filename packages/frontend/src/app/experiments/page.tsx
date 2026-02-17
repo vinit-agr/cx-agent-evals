@@ -1,32 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, Authenticated, Unauthenticated, AuthLoading } from "convex/react";
+import { SignInButton, useOrganization, OrganizationSwitcher } from "@clerk/nextjs";
+import { api } from "@/lib/convex";
+import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
-
-interface DatasetInfo {
-  id: string;
-  name: string;
-  createdAt: string;
-  exampleCount: number;
-  metadata?: {
-    folderPath?: string;
-    strategy?: string;
-  };
-}
-
-interface ExperimentInfo {
-  id: string;
-  name: string;
-  createdAt: string;
-  url: string;
-  scores?: Record<string, number>;
-}
-
-interface ApiKeys {
-  langsmith: boolean;
-  openai: boolean;
-  cohere: boolean;
-}
 
 interface RetrieverConfig {
   chunker: {
@@ -39,7 +18,7 @@ interface RetrieverConfig {
     model: string;
   };
   vectorStore: {
-    type: "in-memory";
+    type: "convex";
   };
   reranker?: {
     type: "cohere";
@@ -47,25 +26,81 @@ interface RetrieverConfig {
   };
 }
 
-type ExperimentStatus = "idle" | "running" | "complete" | "error";
+function OrgRequired({ children }: { children: React.ReactNode }) {
+  const { organization, isLoaded } = useOrganization();
 
-export default function ExperimentsPage() {
-  // API Keys
-  const [apiKeys, setApiKeys] = useState<ApiKeys | null>(null);
+  if (!isLoaded) {
+    return (
+      <div className="flex flex-col h-screen">
+        <Header mode="experiments" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
 
+  if (!organization) {
+    return (
+      <div className="flex flex-col h-screen">
+        <Header mode="experiments" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <p className="text-text-muted">Select or create an organization to continue</p>
+            <OrganizationSwitcher
+              afterSelectOrganizationUrl="/experiments"
+              afterCreateOrganizationUrl="/experiments"
+              appearance={{
+                elements: {
+                  rootBox: "mx-auto",
+                },
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
+function ExperimentsPageContent() {
   // Dataset selection
-  const [datasets, setDatasets] = useState<DatasetInfo[]>([]);
-  const [loadingDatasets, setLoadingDatasets] = useState(true);
-  const [selectedDataset, setSelectedDataset] = useState<DatasetInfo | null>(null);
-  const [corpusPath, setCorpusPath] = useState("");
+  const datasets = useQuery(api.datasets.list);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<Id<"datasets"> | null>(null);
+
+  // Experiments for selected dataset (reactive)
+  const experiments = useQuery(
+    api.experiments.byDataset,
+    selectedDatasetId ? { datasetId: selectedDatasetId } : "skip",
+  );
+
+  // Selected dataset details
+  const selectedDataset = useQuery(
+    api.datasets.get,
+    selectedDatasetId ? { id: selectedDatasetId } : "skip",
+  );
+
+  // Experiment running state
+  const [jobId, setJobId] = useState<Id<"jobs"> | null>(null);
+  const [experimentId, setExperimentId] = useState<Id<"experiments"> | null>(null);
+
+  // Job status (reactive)
+  const job = useQuery(api.jobs.get, jobId ? { id: jobId } : "skip");
+  const currentExperiment = useQuery(
+    api.experiments.get,
+    experimentId ? { id: experimentId } : "skip",
+  );
+
+  const startExperiment = useMutation(api.experiments.start);
 
   // Retriever config
   const [config, setConfig] = useState<RetrieverConfig>({
     chunker: { type: "recursive", chunkSize: 512, chunkOverlap: 50 },
     embedder: { type: "openai", model: "text-embedding-3-small" },
-    vectorStore: { type: "in-memory" },
+    vectorStore: { type: "convex" },
   });
-  const [useReranker, setUseReranker] = useState(false);
   const [k, setK] = useState(5);
 
   // Metrics
@@ -79,17 +114,7 @@ export default function ExperimentsPage() {
   // Experiment name
   const [experimentName, setExperimentName] = useState("");
   const [nameEdited, setNameEdited] = useState(false);
-
-  // Experiment status
-  const [status, setStatus] = useState<ExperimentStatus>("idle");
-  const [phase, setPhase] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [completedScores, setCompletedScores] = useState<Record<string, number> | null>(null);
-
-  // Experiments list
-  const [experiments, setExperiments] = useState<ExperimentInfo[]>([]);
-  const [compareUrl, setCompareUrl] = useState<string | null>(null);
-  const [loadingExperiments, setLoadingExperiments] = useState(false);
 
   // Generate experiment name from config
   useEffect(() => {
@@ -100,165 +125,47 @@ export default function ExperimentsPage() {
       config.embedder.model.replace("text-embedding-", "").replace("-", ""),
       `k${k}`,
     ];
-    if (useReranker) {
-      parts.push("cohere");
-    }
     setExperimentName(parts.join("-"));
-  }, [config, k, useReranker, nameEdited]);
+  }, [config, k, nameEdited]);
 
-  // Fetch API keys on mount
-  useEffect(() => {
-    fetch("/api/env/check")
-      .then((res) => res.json())
-      .then((data) => setApiKeys(data.keys))
-      .catch(() => setApiKeys({ langsmith: false, openai: false, cohere: false }));
-  }, []);
+  // Derive status from job
+  const status = !jobId
+    ? "idle"
+    : job?.status === "completed"
+      ? "complete"
+      : job?.status === "failed"
+        ? "error"
+        : "running";
 
-  // Fetch datasets on mount
-  useEffect(() => {
-    setLoadingDatasets(true);
-    fetch("/api/datasets/list")
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.datasets) {
-          setDatasets(data.datasets);
-        }
-      })
-      .catch(() => setDatasets([]))
-      .finally(() => setLoadingDatasets(false));
-  }, []);
+  const phase = job?.progress?.message ?? (job?.phase ? `${job.phase}...` : "Starting...");
+  const completedScores = currentExperiment?.scores as Record<string, number> | undefined;
 
-  // Update corpus path when dataset changes
-  useEffect(() => {
-    if (selectedDataset?.metadata?.folderPath) {
-      setCorpusPath(selectedDataset.metadata.folderPath);
-    } else {
-      setCorpusPath("");
-    }
-  }, [selectedDataset]);
+  async function handleRunExperiment() {
+    if (!selectedDatasetId || status === "running") return;
 
-  // Fetch experiments when dataset changes
-  useEffect(() => {
-    if (!selectedDataset) {
-      setExperiments([]);
-      setCompareUrl(null);
-      return;
-    }
-
-    setLoadingExperiments(true);
-    fetch(`/api/experiments/list?datasetId=${selectedDataset.id}`)
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.experiments) {
-          setExperiments(data.experiments);
-          setCompareUrl(data.compareUrl);
-        }
-      })
-      .catch(() => {
-        setExperiments([]);
-        setCompareUrl(null);
-      })
-      .finally(() => setLoadingExperiments(false));
-  }, [selectedDataset]);
-
-  const handleRunExperiment = useCallback(async () => {
-    if (!selectedDataset || !corpusPath || status === "running") return;
-
-    setStatus("running");
-    setPhase("Starting...");
     setError(null);
-    setCompletedScores(null);
 
     const selectedMetrics = Object.entries(metrics)
       .filter(([, v]) => v)
       .map(([k]) => k);
 
-    const body = {
-      datasetId: selectedDataset.id,
-      datasetName: selectedDataset.name,
-      corpusPath,
-      k,
-      metrics: selectedMetrics,
-      experimentName,
-      retrieverConfig: useReranker
-        ? { ...config, reranker: { type: "cohere" as const } }
-        : config,
-    };
-
     try {
-      const res = await fetch("/api/experiments/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+      const result = await startExperiment({
+        datasetId: selectedDatasetId,
+        name: experimentName,
+        retrieverConfig: config,
+        k,
+        metricNames: selectedMetrics,
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || "Failed to start experiment");
-        setStatus("error");
-        return;
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) {
-        setError("No response stream");
-        setStatus("error");
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          const match = line.match(/^data:\s*(.+)$/m);
-          if (!match) continue;
-
-          try {
-            const event = JSON.parse(match[1]);
-
-            if (event.type === "phase") {
-              setPhase(event.message);
-            } else if (event.type === "complete") {
-              setStatus("complete");
-              setPhase("");
-              // Refresh experiments list
-              fetch(`/api/experiments/list?datasetId=${selectedDataset.id}`)
-                .then((res) => res.json())
-                .then((data) => {
-                  if (data.experiments) {
-                    setExperiments(data.experiments);
-                    setCompareUrl(data.compareUrl);
-                    // Get scores from the newest experiment
-                    const newest = data.experiments[0];
-                    if (newest?.scores) {
-                      setCompletedScores(newest.scores);
-                    }
-                  }
-                });
-            } else if (event.type === "error") {
-              setError(event.error);
-              setStatus("error");
-            }
-          } catch {
-            // Skip malformed JSON
-          }
-        }
-      }
-    } catch {
-      setError("Connection lost — check server logs");
-      setStatus("error");
+      setJobId(result.jobId);
+      setExperimentId(result.experimentId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to start experiment");
     }
-  }, [selectedDataset, corpusPath, k, metrics, experimentName, config, useReranker, status]);
+  }
 
-  const canRun = selectedDataset && corpusPath && status !== "running" && apiKeys?.openai;
+  const canRun = selectedDatasetId && status !== "running";
 
   return (
     <div className="flex flex-col h-screen">
@@ -278,55 +185,46 @@ export default function ExperimentsPage() {
                   <label className="text-xs text-text-muted uppercase tracking-wide">
                     Dataset
                   </label>
-                  {loadingDatasets ? (
+                  {datasets === undefined ? (
                     <div className="flex items-center gap-2 text-text-dim text-sm">
                       <div className="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
                       Loading datasets...
                     </div>
                   ) : (
                     <select
-                      value={selectedDataset?.id || ""}
+                      value={selectedDatasetId ?? ""}
                       onChange={(e) => {
-                        const ds = datasets.find((d) => d.id === e.target.value);
-                        setSelectedDataset(ds || null);
+                        setSelectedDatasetId(
+                          e.target.value ? (e.target.value as Id<"datasets">) : null,
+                        );
                       }}
                       className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm text-text focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none"
                     >
                       <option value="">Select a dataset...</option>
                       {datasets.map((ds) => (
-                        <option key={ds.id} value={ds.id}>
-                          {ds.name} ({ds.exampleCount} examples)
+                        <option key={ds._id} value={ds._id}>
+                          {ds.name} ({ds.questionCount} questions)
                         </option>
                       ))}
                     </select>
                   )}
                 </div>
 
-                {/* Corpus Info */}
+                {/* Dataset Info */}
                 {selectedDataset && (
                   <div className="border border-border rounded bg-bg-elevated p-3 space-y-2">
                     <div className="text-xs text-text-dim uppercase tracking-wide">
-                      Corpus
+                      Dataset Info
                     </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-text-muted text-sm">📁</span>
-                      {selectedDataset.metadata?.folderPath ? (
-                        <span className="text-sm text-text truncate">
-                          {selectedDataset.metadata.folderPath}
-                        </span>
-                      ) : (
-                        <input
-                          type="text"
-                          value={corpusPath}
-                          onChange={(e) => setCorpusPath(e.target.value)}
-                          placeholder="Enter corpus folder path..."
-                          className="flex-1 bg-bg border border-border rounded px-2 py-1 text-sm text-text focus:border-accent outline-none"
-                        />
-                      )}
+                    <div className="text-sm text-text-muted">
+                      Strategy: {selectedDataset.strategy}
                     </div>
-                    {selectedDataset.metadata?.strategy && (
+                    <div className="text-sm text-text-muted">
+                      Questions: {selectedDataset.questionCount}
+                    </div>
+                    {selectedDataset.langsmithSyncStatus && (
                       <div className="text-xs text-text-dim">
-                        Strategy: {selectedDataset.metadata.strategy}
+                        LangSmith: {selectedDataset.langsmithSyncStatus}
                       </div>
                     )}
                   </div>
@@ -400,74 +298,6 @@ export default function ExperimentsPage() {
                       text-embedding-ada-002
                     </option>
                   </select>
-                  {apiKeys && (
-                    <div
-                      className={`flex items-center gap-2 text-xs ${
-                        apiKeys.openai ? "text-accent" : "text-amber-400"
-                      }`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          apiKeys.openai
-                            ? "bg-accent"
-                            : "bg-amber-400 animate-pulse"
-                        }`}
-                      />
-                      {apiKeys.openai
-                        ? "OPENAI_API_KEY configured"
-                        : "OPENAI_API_KEY missing"}
-                    </div>
-                  )}
-                </div>
-
-                {/* Vector Store */}
-                <div className="border border-border rounded bg-bg-elevated p-3 space-y-3">
-                  <div className="text-xs text-text-dim uppercase tracking-wide">
-                    Vector Store
-                  </div>
-                  <select
-                    value="in-memory"
-                    disabled
-                    className="w-full bg-bg border border-border rounded px-2 py-1 text-sm text-text-muted"
-                  >
-                    <option value="in-memory">In-Memory</option>
-                  </select>
-                </div>
-
-                {/* Reranker */}
-                <div className="border border-border rounded bg-bg-elevated p-3 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="text-xs text-text-dim uppercase tracking-wide">
-                      Reranker
-                    </div>
-                    <label className="flex items-center gap-2 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={useReranker}
-                        onChange={(e) => setUseReranker(e.target.checked)}
-                        className="w-4 h-4 rounded border-border bg-bg text-accent focus:ring-accent/50"
-                      />
-                      <span className="text-xs text-text-muted">Use Cohere</span>
-                    </label>
-                  </div>
-                  {useReranker && apiKeys && (
-                    <div
-                      className={`flex items-center gap-2 text-xs ${
-                        apiKeys.cohere ? "text-accent" : "text-amber-400"
-                      }`}
-                    >
-                      <span
-                        className={`w-1.5 h-1.5 rounded-full ${
-                          apiKeys.cohere
-                            ? "bg-accent"
-                            : "bg-amber-400 animate-pulse"
-                        }`}
-                      />
-                      {apiKeys.cohere
-                        ? "COHERE_API_KEY configured"
-                        : "COHERE_API_KEY missing"}
-                    </div>
-                  )}
                 </div>
 
                 {/* K Parameter */}
@@ -618,7 +448,7 @@ export default function ExperimentsPage() {
                           {key}
                         </span>
                         <span className="block text-accent text-lg font-medium">
-                          {value.toFixed(3)}
+                          {(value as number).toFixed(3)}
                         </span>
                       </div>
                     ))}
@@ -626,15 +456,11 @@ export default function ExperimentsPage() {
                 </div>
               )}
 
-              {status === "error" && error && (
+              {status === "error" && (
                 <div className="mt-3">
-                  <p className="text-red-400 text-sm">{error}</p>
-                  <button
-                    onClick={() => setStatus("idle")}
-                    className="mt-2 text-sm text-red-400 hover:text-red-300 underline"
-                  >
-                    Dismiss
-                  </button>
+                  <p className="text-red-400 text-sm">
+                    {error || job?.error || "Unknown error"}
+                  </p>
                 </div>
               )}
             </div>
@@ -669,13 +495,13 @@ export default function ExperimentsPage() {
             </button>
 
             {/* Experiments List */}
-            {selectedDataset && (
+            {selectedDatasetId && (
               <div className="border border-border rounded-lg bg-bg-elevated">
                 <div className="px-4 py-2 border-b border-border text-xs text-text-dim uppercase tracking-wider">
                   Recent Experiments
                 </div>
                 <div className="p-4 space-y-3">
-                  {loadingExperiments ? (
+                  {experiments === undefined ? (
                     <div className="flex items-center gap-2 text-text-dim text-sm">
                       <div className="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
                       Loading...
@@ -685,29 +511,44 @@ export default function ExperimentsPage() {
                       No experiments yet for this dataset
                     </p>
                   ) : (
-                    <>
-                      {experiments.map((exp) => (
-                        <div
-                          key={exp.id}
-                          className="border border-border rounded-lg p-4 hover:border-border/80 transition-colors"
-                        >
+                    experiments.map((exp) => (
+                      <div
+                        key={exp._id}
+                        className="border border-border rounded-lg p-4 hover:border-border/80 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
                           <div className="font-medium text-text">{exp.name}</div>
-                          {exp.scores && Object.keys(exp.scores).length > 0 && (
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded ${
+                              exp.status === "completed"
+                                ? "bg-accent/10 text-accent"
+                                : exp.status === "failed"
+                                  ? "bg-red-500/10 text-red-400"
+                                  : "bg-text-dim/10 text-text-dim"
+                            }`}
+                          >
+                            {exp.status}
+                          </span>
+                        </div>
+                        {exp.scores &&
+                          typeof exp.scores === "object" &&
+                          Object.keys(exp.scores as Record<string, number>).length > 0 && (
                             <div className="flex gap-4 mt-2 text-sm">
-                              {Object.entries(exp.scores)
-                                .slice(0, 2)
+                              {Object.entries(exp.scores as Record<string, number>)
+                                .slice(0, 4)
                                 .map(([key, value]) => (
                                   <span key={key} className="text-text-muted">
                                     {key}:{" "}
                                     <span className="text-accent">
-                                      {value.toFixed(2)}
+                                      {value.toFixed(3)}
                                     </span>
                                   </span>
                                 ))}
                             </div>
                           )}
+                        {exp.langsmithUrl && (
                           <a
-                            href={exp.url}
+                            href={exp.langsmithUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 text-xs text-text-dim hover:text-accent mt-3 transition-colors"
@@ -727,33 +568,9 @@ export default function ExperimentsPage() {
                               />
                             </svg>
                           </a>
-                        </div>
-                      ))}
-
-                      {experiments.length >= 2 && compareUrl && (
-                        <a
-                          href={compareUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="flex items-center justify-center gap-2 py-2 text-sm text-text-muted hover:text-accent border border-border rounded-lg hover:border-accent/50 transition-colors"
-                        >
-                          Compare All in LangSmith
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            viewBox="0 0 24 24"
-                            stroke="currentColor"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"
-                            />
-                          </svg>
-                        </a>
-                      )}
-                    </>
+                        )}
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
@@ -762,5 +579,40 @@ export default function ExperimentsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ExperimentsPage() {
+  return (
+    <>
+      <AuthLoading>
+        <div className="flex flex-col h-screen">
+          <Header mode="experiments" />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+          </div>
+        </div>
+      </AuthLoading>
+      <Unauthenticated>
+        <div className="flex flex-col h-screen">
+          <Header mode="experiments" />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <p className="text-text-muted">Sign in to run experiments</p>
+              <SignInButton mode="modal">
+                <button className="px-6 py-2 bg-accent text-bg-elevated rounded-lg hover:bg-accent/90 transition-colors font-medium">
+                  Sign In
+                </button>
+              </SignInButton>
+            </div>
+          </div>
+        </div>
+      </Unauthenticated>
+      <Authenticated>
+        <OrgRequired>
+          <ExperimentsPageContent />
+        </OrgRequired>
+      </Authenticated>
+    </>
   );
 }

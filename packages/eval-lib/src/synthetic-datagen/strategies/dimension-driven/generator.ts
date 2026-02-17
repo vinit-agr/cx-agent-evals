@@ -37,7 +37,9 @@ export class DimensionDrivenStrategy implements QuestionStrategy {
   }
 
   async generate(context: StrategyContext): Promise<GeneratedQuery[]> {
-    const dimensions = await loadDimensions(this._options.dimensionsFilePath);
+    const dimensions = this._options.dimensions
+      ? [...this._options.dimensions]
+      : await loadDimensions(this._options.dimensionsFilePath!);
 
     this._onProgress({
       phase: "filtering",

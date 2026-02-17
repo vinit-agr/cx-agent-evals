@@ -1,0 +1,91 @@
+/* eslint-disable */
+/**
+ * Generated `api` utility.
+ *
+ * THIS CODE IS AUTOMATICALLY GENERATED.
+ *
+ * To regenerate, run `npx convex dev`.
+ * @module
+ */
+
+import type * as crons from "../crons.js";
+import type * as datasets from "../datasets.js";
+import type * as documents from "../documents.js";
+import type * as experimentActions from "../experimentActions.js";
+import type * as experimentResults from "../experimentResults.js";
+import type * as experiments from "../experiments.js";
+import type * as generation from "../generation.js";
+import type * as generationActions from "../generationActions.js";
+import type * as jobItems from "../jobItems.js";
+import type * as jobs from "../jobs.js";
+import type * as knowledgeBases from "../knowledgeBases.js";
+import type * as langsmithRetry from "../langsmithRetry.js";
+import type * as langsmithSync from "../langsmithSync.js";
+import type * as langsmithSyncRetry from "../langsmithSyncRetry.js";
+import type * as lib_auth from "../lib/auth.js";
+import type * as lib_batchProcessor from "../lib/batchProcessor.js";
+import type * as lib_llm from "../lib/llm.js";
+import type * as questions from "../questions.js";
+import type * as rag from "../rag.js";
+import type * as ragActions from "../ragActions.js";
+import type * as testing from "../testing.js";
+import type * as users from "../users.js";
+
+import type {
+  ApiFromModules,
+  FilterApi,
+  FunctionReference,
+} from "convex/server";
+
+declare const fullApi: ApiFromModules<{
+  crons: typeof crons;
+  datasets: typeof datasets;
+  documents: typeof documents;
+  experimentActions: typeof experimentActions;
+  experimentResults: typeof experimentResults;
+  experiments: typeof experiments;
+  generation: typeof generation;
+  generationActions: typeof generationActions;
+  jobItems: typeof jobItems;
+  jobs: typeof jobs;
+  knowledgeBases: typeof knowledgeBases;
+  langsmithRetry: typeof langsmithRetry;
+  langsmithSync: typeof langsmithSync;
+  langsmithSyncRetry: typeof langsmithSyncRetry;
+  "lib/auth": typeof lib_auth;
+  "lib/batchProcessor": typeof lib_batchProcessor;
+  "lib/llm": typeof lib_llm;
+  questions: typeof questions;
+  rag: typeof rag;
+  ragActions: typeof ragActions;
+  testing: typeof testing;
+  users: typeof users;
+}>;
+
+/**
+ * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
+export declare const api: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "public">
+>;
+
+/**
+ * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
+ */
+export declare const internal: FilterApi<
+  typeof fullApi,
+  FunctionReference<any, "internal">
+>;
+
+export declare const components: {};

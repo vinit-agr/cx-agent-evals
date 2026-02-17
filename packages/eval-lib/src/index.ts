@@ -25,6 +25,7 @@ export {
   CorpusSchema,
   createDocument,
   createCorpus,
+  createCorpusFromDocuments,
   corpusFromFolder,
   getDocument,
   CharacterSpanSchema,
@@ -39,6 +40,7 @@ export { isPositionAwareChunker, RecursiveCharacterChunker } from "./chunkers/in
 
 // Embedder
 export type { Embedder } from "./embedders/index.js";
+export { OpenAIEmbedder } from "./embedders/index.js";
 
 // Vector Store
 export type { VectorStore } from "./vector-stores/index.js";
@@ -72,7 +74,11 @@ export { SimpleStrategy } from "./synthetic-datagen/strategies/simple/generator.
 export { DimensionDrivenStrategy } from "./synthetic-datagen/strategies/dimension-driven/generator.js";
 export { RealWorldGroundedStrategy } from "./synthetic-datagen/strategies/real-world-grounded/generator.js";
 export { discoverDimensions } from "./synthetic-datagen/strategies/dimension-driven/discovery.js";
-export { loadDimensions } from "./synthetic-datagen/strategies/dimension-driven/dimensions.js";
+export {
+  loadDimensions,
+  loadDimensionsFromFile,
+  parseDimensions,
+} from "./synthetic-datagen/strategies/dimension-driven/dimensions.js";
 export { GroundTruthAssigner } from "./synthetic-datagen/ground-truth/token-level.js";
 export type {
   Assigner,

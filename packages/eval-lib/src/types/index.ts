@@ -11,6 +11,7 @@ export {
   CorpusSchema,
   createDocument,
   createCorpus,
+  createCorpusFromDocuments,
   corpusFromFolder,
   getDocument,
 } from "./documents.js";

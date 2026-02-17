@@ -39,7 +39,10 @@ export type ProgressEvent =
   | { phase: "done"; totalQuestions: number };
 
 export interface DimensionDrivenStrategyOptions {
-  readonly dimensionsFilePath: string;
+  /** Path to dimensions JSON file (for Node.js environments). */
+  readonly dimensionsFilePath?: string;
+  /** Pre-parsed dimensions (for non-Node environments like Convex). */
+  readonly dimensions?: readonly Dimension[];
   readonly totalQuestions: number;
   readonly onProgress?: ProgressCallback;
 }

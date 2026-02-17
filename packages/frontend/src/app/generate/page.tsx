@@ -1,23 +1,88 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation, Authenticated, Unauthenticated, AuthLoading } from "convex/react";
+import { SignInButton, useOrganization, OrganizationSwitcher } from "@clerk/nextjs";
+import { api } from "@/lib/convex";
+import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
-import { CorpusLoader } from "@/components/CorpusLoader";
+import { KBSelector } from "@/components/KBSelector";
 import { GenerateConfig, GenerateSettings } from "@/components/GenerateConfig";
 import { QuestionList } from "@/components/QuestionList";
 import { DocumentViewer } from "@/components/DocumentViewer";
 import { DimensionWizard } from "@/components/DimensionWizard";
 import { RealWorldQuestionsModal } from "@/components/RealWorldQuestionsModal";
-import { UploadDatasetModal } from "@/components/UploadDatasetModal";
 import { StrategyType, Dimension, DocumentInfo, GeneratedQuestion } from "@/lib/types";
 
-export default function GeneratePage() {
-  const [documents, setDocuments] = useState<DocumentInfo[]>([]);
-  const [folderPath, setFolderPath] = useState("");
-  const [questions, setQuestions] = useState<GeneratedQuestion[]>([]);
+function OrgRequired({ children }: { children: React.ReactNode }) {
+  const { organization, isLoaded } = useOrganization();
+
+  if (!isLoaded) {
+    return (
+      <div className="flex flex-col h-screen">
+        <Header mode="generate" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!organization) {
+    return (
+      <div className="flex flex-col h-screen">
+        <Header mode="generate" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="text-center space-y-4">
+            <p className="text-text-muted">Select or create an organization to continue</p>
+            <OrganizationSwitcher
+              afterSelectOrganizationUrl="/generate"
+              afterCreateOrganizationUrl="/generate"
+              appearance={{
+                elements: {
+                  rootBox: "mx-auto",
+                },
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return <>{children}</>;
+}
+
+function GeneratePageContent() {
+  // KB selection
+  const [selectedKbId, setSelectedKbId] = useState<Id<"knowledgeBases"> | null>(null);
+
+  // Generation tracking
+  const [datasetId, setDatasetId] = useState<Id<"datasets"> | null>(null);
+  const [jobId, setJobId] = useState<Id<"jobs"> | null>(null);
+
+  // Questions from Convex (reactive)
+  const questionsData = useQuery(
+    api.questions.byDataset,
+    datasetId ? { datasetId } : "skip",
+  );
+
+  // Documents in the selected KB
+  const documentsData = useQuery(
+    api.documents.listByKb,
+    selectedKbId ? { kbId: selectedKbId } : "skip",
+  );
+
+  // Job status (reactive — updates as generation progresses)
+  const job = useQuery(api.jobs.get, jobId ? { id: jobId } : "skip");
+
+  // Dataset info
+  const dataset = useQuery(api.datasets.get, datasetId ? { id: datasetId } : "skip");
+
+  const startGeneration = useMutation(api.generation.start);
+
+  // UI state
   const [selectedQuestion, setSelectedQuestion] = useState<number | null>(null);
-  const [generating, setGenerating] = useState(false);
-  const [totalDone, setTotalDone] = useState<number | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
   const [settings, setSettings] = useState<GenerateSettings>({
     questionsPerDoc: 10,
@@ -29,11 +94,33 @@ export default function GeneratePage() {
   const [totalQuestions, setTotalQuestions] = useState(50);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardInitialStep, setWizardInitialStep] = useState(1);
-  const [phaseStatus, setPhaseStatus] = useState<string | null>(null);
   const [realWorldQuestions, setRealWorldQuestions] = useState<string[]>([]);
   const [totalSyntheticQuestions, setTotalSyntheticQuestions] = useState(50);
   const [realWorldModalOpen, setRealWorldModalOpen] = useState(false);
-  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+
+  // Selected document for viewing
+  const [selectedDocId, setSelectedDocId] = useState<Id<"documents"> | null>(null);
+  const selectedDocData = useQuery(
+    api.documents.get,
+    selectedDocId ? { id: selectedDocId } : "skip",
+  );
+
+  // Derive generating state from job
+  const generating = job?.status === "pending" || job?.status === "running";
+
+  // Convert Convex questions to component format
+  const questions: GeneratedQuestion[] = (questionsData ?? []).map((q) => ({
+    docId: q.sourceDocId,
+    query: q.queryText,
+    relevantSpans: q.relevantSpans,
+  }));
+
+  // Convert Convex documents to DocumentInfo format
+  const documents: DocumentInfo[] = (documentsData ?? []).map((d) => ({
+    id: d.docId,
+    content: "", // Content loaded on demand via selectedDocData
+    contentLength: d.contentLength,
+  }));
 
   // Load saved configs from localStorage on mount
   useEffect(() => {
@@ -64,19 +151,11 @@ export default function GeneratePage() {
   }, []);
 
   function handleReset() {
-    setDocuments([]);
-    setQuestions([]);
+    setDatasetId(null);
+    setJobId(null);
     setSelectedQuestion(null);
-    setTotalDone(null);
     setGenError(null);
-  }
-
-  function handleCorpusLoaded(docs: DocumentInfo[], path: string) {
-    setDocuments(docs);
-    setFolderPath(path);
-    setQuestions([]);
-    setSelectedQuestion(null);
-    setTotalDone(null);
+    setSelectedDocId(null);
   }
 
   function handleOpenWizard() {
@@ -112,121 +191,65 @@ export default function GeneratePage() {
     }
   }
 
-  const handleGenerate = useCallback(async () => {
-    if (!folderPath || generating) return;
+  async function handleGenerate() {
+    if (!selectedKbId || generating) return;
 
-    setGenerating(true);
-    setQuestions([]);
-    setSelectedQuestion(null);
-    setTotalDone(null);
     setGenError(null);
-    setPhaseStatus(null);
+    setSelectedQuestion(null);
+    setSelectedDocId(null);
+
+    const strategyConfig: Record<string, unknown> = {};
+
+    if (strategy === "simple") {
+      strategyConfig.queriesPerDoc = settings.questionsPerDoc;
+    } else if (strategy === "dimension-driven") {
+      strategyConfig.dimensions = dimensions;
+      strategyConfig.totalQuestions = totalQuestions;
+    } else if (strategy === "real-world-grounded") {
+      strategyConfig.questions = realWorldQuestions;
+      strategyConfig.totalSyntheticQuestions = totalSyntheticQuestions;
+    }
 
     try {
-      const body: Record<string, unknown> = {
-        folderPath,
+      const result = await startGeneration({
+        kbId: selectedKbId,
+        name: `${strategy}-${Date.now()}`,
         strategy,
-      };
-
-      if (strategy === "simple") {
-        body.questionsPerDoc = settings.questionsPerDoc;
-      } else if (strategy === "dimension-driven") {
-        body.dimensions = dimensions;
-        body.totalQuestions = totalQuestions;
-      } else if (strategy === "real-world-grounded") {
-        body.realWorldQuestions = realWorldQuestions;
-        body.totalSyntheticQuestions = totalSyntheticQuestions;
-      }
-
-      const res = await fetch("/api/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        strategyConfig,
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        setGenError(data.error || "Generation failed");
-        setGenerating(false);
-        return;
-      }
-
-      const reader = res.body?.getReader();
-      if (!reader) {
-        setGenError("No response stream");
-        setGenerating(false);
-        return;
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          const match = line.match(/^data:\s*(.+)$/m);
-          if (!match) continue;
-
-          try {
-            const event = JSON.parse(match[1]);
-
-            if (event.type === "phase") {
-              const phaseLabels: Record<string, string | null> = {
-                filtering: "Filtering dimension combinations...",
-                summarizing: `Summarizing ${event.totalDocs ?? ""} documents...`,
-                assigning: "Analyzing document relevance...",
-                sampling: `Sampling ${event.totalQuestions ?? ""} questions...`,
-                "embedding-questions": `Embedding ${event.totalQuestions ?? ""} questions...`,
-                "embedding-passages": `Embedding ${event.totalPassages ?? ""} passages...`,
-                matching: `Matched ${event.totalQuestions ?? ""} questions to documents...`,
-                generating: `Generating for ${event.docId ?? "document"} (${(event.docIndex ?? 0) + 1}/${event.totalDocs ?? "?"})...`,
-                "ground-truth-start": "Assigning ground truth...",
-                "ground-truth": `Ground truth for ${event.docId ?? "document"}...`,
-                done: null,
-              };
-              setPhaseStatus(phaseLabels[event.phase] ?? null);
-            } else if (event.type === "question") {
-              setQuestions((prev) => [
-                ...prev,
-                {
-                  docId: event.docId,
-                  query: event.query,
-                  relevantSpans: event.relevantSpans,
-                },
-              ]);
-            } else if (event.type === "done") {
-              setTotalDone(event.totalQuestions);
-              setPhaseStatus(null);
-            } else if (event.type === "error") {
-              setGenError(event.error);
-              setPhaseStatus(null);
-            }
-          } catch {
-            // Skip malformed JSON
-          }
-        }
-      }
-    } catch {
-      setGenError("Connection lost — check server logs");
-    } finally {
-      setGenerating(false);
+      setDatasetId(result.datasetId);
+      setJobId(result.jobId);
+    } catch (err) {
+      setGenError(err instanceof Error ? err.message : "Failed to start generation");
     }
-  }, [folderPath, generating, settings, strategy, dimensions, totalQuestions, realWorldQuestions, totalSyntheticQuestions]);
+  }
 
-  // Find selected question's document
+  // When a question is selected, load its source document
   const selectedQ = selectedQuestion !== null ? questions[selectedQuestion] : null;
-  const selectedDoc = selectedQ
-    ? documents.find((d) => d.id === selectedQ.docId) ?? null
+  useEffect(() => {
+    if (selectedQ && documentsData) {
+      const doc = documentsData.find((d) => d.docId === selectedQ.docId);
+      if (doc) {
+        setSelectedDocId(doc._id);
+      }
+    }
+  }, [selectedQ, documentsData]);
+
+  // Build doc info for DocumentViewer
+  const selectedDoc: DocumentInfo | null = selectedDocData
+    ? {
+        id: selectedDocData.docId,
+        content: selectedDocData.content,
+        contentLength: selectedDocData.contentLength,
+      }
     : null;
 
-  // Main workspace
-  const hasDocuments = documents.length > 0;
+  // Phase status from job progress
+  const phaseStatus = job?.progress?.message ?? (job?.phase ? `${job.phase}...` : null);
+  const totalDone = job?.status === "completed" ? (questions.length || null) : null;
+
+  const hasDocuments = (documentsData ?? []).length > 0;
   const hasQuestions = questions.length > 0;
 
   return (
@@ -234,10 +257,10 @@ export default function GeneratePage() {
       <Header mode="generate" onReset={handleReset} />
 
       <div className="flex flex-1 overflow-hidden max-w-full">
-        {/* Left sidebar: corpus + config */}
+        {/* Left sidebar: KB selector + config */}
         <div className="w-80 flex-shrink-0 border-r border-border bg-bg-elevated overflow-y-auto">
           <div className="p-4 space-y-6">
-            <CorpusLoader documents={documents} onLoaded={handleCorpusLoaded} />
+            <KBSelector selectedKbId={selectedKbId} onSelect={setSelectedKbId} />
 
             {hasDocuments && (
               <div className="pt-2 border-t border-border">
@@ -265,6 +288,12 @@ export default function GeneratePage() {
                 <p className="text-xs text-error">{genError}</p>
               </div>
             )}
+
+            {job?.error && (
+              <div className="p-3 rounded border border-error/30 bg-error/5 animate-fade-in">
+                <p className="text-xs text-error">{job.error}</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -278,7 +307,6 @@ export default function GeneratePage() {
               generating={generating}
               totalDone={totalDone}
               phaseStatus={phaseStatus}
-              onUpload={() => setUploadModalOpen(true)}
             />
           </div>
         )}
@@ -308,20 +336,41 @@ export default function GeneratePage() {
           onClose={() => setRealWorldModalOpen(false)}
         />
       )}
-
-      {/* Upload to LangSmith Modal */}
-      {uploadModalOpen && (
-        <UploadDatasetModal
-          questions={questions}
-          strategy={strategy}
-          folderPath={folderPath}
-          documents={documents}
-          dimensions={strategy === "dimension-driven" ? dimensions : undefined}
-          questionsPerDoc={strategy === "simple" ? settings.questionsPerDoc : undefined}
-          totalQuestions={strategy === "dimension-driven" ? totalQuestions : undefined}
-          onClose={() => setUploadModalOpen(false)}
-        />
-      )}
     </div>
+  );
+}
+
+export default function GeneratePage() {
+  return (
+    <>
+      <AuthLoading>
+        <div className="flex flex-col h-screen">
+          <Header mode="generate" />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+          </div>
+        </div>
+      </AuthLoading>
+      <Unauthenticated>
+        <div className="flex flex-col h-screen">
+          <Header mode="generate" />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="text-center space-y-4">
+              <p className="text-text-muted">Sign in to generate questions</p>
+              <SignInButton mode="modal">
+                <button className="px-6 py-2 bg-accent text-bg-elevated rounded-lg hover:bg-accent/90 transition-colors font-medium">
+                  Sign In
+                </button>
+              </SignInButton>
+            </div>
+          </div>
+        </div>
+      </Unauthenticated>
+      <Authenticated>
+        <OrgRequired>
+          <GeneratePageContent />
+        </OrgRequired>
+      </Authenticated>
+    </>
   );
 }
