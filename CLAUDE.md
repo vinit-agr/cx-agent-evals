@@ -2,7 +2,7 @@
 
 ## Project overview
 
-RAG Evaluation System — a TypeScript library + Next.js frontend for evaluating RAG retrieval pipelines. Uses span-based (character-level) evaluation with character span matching for precise retrieval assessment, synthetic question generation, and a visual inspection UI.
+RAG Evaluation System — a TypeScript library + Convex backend + Next.js frontend for evaluating RAG retrieval pipelines. Uses span-based (character-level) evaluation with character span matching for precise retrieval assessment, synthetic question generation, and a visual inspection UI.
 
 ## Repository structure
 
@@ -28,16 +28,37 @@ packages/
       langsmith/                # LangSmith upload/load utilities
     tests/                      # Vitest test suites
 
-  frontend/                     # Next.js 16 app (Tailwind CSS v4, dark theme)
-    src/app/                    # App router pages and API routes
-      api/generate/             # SSE streaming endpoint for question generation
-      api/discover-dimensions/  # Dimension auto-discovery endpoint
-      api/corpus/               # Corpus loading endpoint
-      api/browse/               # Folder browser endpoint
-    src/components/             # UI components
-    src/lib/                    # Shared types
+  backend/                      # Convex backend
+    convex/
+      schema.ts                 # Full schema: users, knowledgeBases, documents, datasets, questions, experiments, experimentResults, jobs, jobItems, documentChunks
+      lib/auth.ts               # Clerk JWT auth context extraction
+      lib/llm.ts                # OpenAI client adapter for eval-lib
+      lib/batchProcessor.ts     # Shared batch processing with time budget, checkpointing, continuation
+      knowledgeBases.ts         # KB CRUD (org-scoped)
+      documents.ts              # Document upload via Convex storage
+      generation.ts             # Question generation job orchestration
+      generationActions.ts      # "use node" — strategy execution actions
+      questions.ts              # Question CRUD
+      datasets.ts               # Dataset CRUD
+      experiments.ts            # Experiment job orchestration
+      experimentActions.ts      # "use node" — indexing, evaluation, aggregation actions
+      rag.ts                    # Chunk mutations/queries
+      ragActions.ts             # "use node" — document indexing with chunking + embedding
+      langsmithSync.ts          # "use node" — LangSmith dataset/experiment sync
+      jobs.ts                   # Job tracking with watchdog
+      jobItems.ts               # Per-item tracking within job phases
+      crons.ts                  # Hourly LangSmith retry cron
+      testing.ts                # Test-only helper functions
+    tests/                      # convex-test integration tests
 
-  backend/                      # Placeholder for future Convex backend
+  frontend/                     # Next.js 16 app (Tailwind CSS v4, dark theme)
+    src/app/                    # App router pages
+      generate/                 # Question generation page (Convex hooks)
+      experiments/              # Experiment runner page (Convex hooks)
+      sign-in/                  # Clerk sign-in
+      sign-up/                  # Clerk sign-up
+    src/components/             # UI components (KBSelector, FileUploader, Header, ConvexClientProvider)
+    src/lib/                    # Convex API re-exports
 
 data/                           # Sample data files (shared, at repo root)
 openspec/                       # OpenSpec change management artifacts
@@ -52,10 +73,14 @@ pnpm build              # Build eval-lib with tsup (outputs to packages/eval-lib
 pnpm test               # Run vitest tests in eval-lib
 pnpm typecheck          # TypeScript check eval-lib
 pnpm dev                # Start frontend Next.js dev server
+pnpm dev:backend        # Start Convex dev server (watches + hot-deploys)
+pnpm deploy:backend     # Deploy Convex to production
+pnpm typecheck:backend  # TypeScript check backend
 
 # Or run directly in packages
 pnpm -C packages/eval-lib build
 pnpm -C packages/eval-lib test
+pnpm -C packages/backend test      # Run convex-test integration tests
 pnpm -C packages/frontend dev
 pnpm -C packages/frontend build    # Production build (good for verifying TypeScript)
 ```
@@ -66,17 +91,28 @@ After changing library code in `packages/eval-lib/src/`:
 1. `pnpm build` at project root (rebuilds eval-lib dist/)
 2. Restart the Next.js dev server (Turbopack caches resolved modules)
 
+Backend changes in `packages/backend/convex/` are automatically picked up by `pnpm dev:backend`.
+
 First-time setup:
 ```bash
-pnpm install    # Run at repo root — links all workspace packages
-pnpm build      # Build the eval-lib so frontend can resolve imports
+pnpm install          # Run at repo root — links all workspace packages
+pnpm build            # Build the eval-lib so frontend and backend can resolve imports
+cp packages/frontend/.env.example packages/frontend/.env  # Then fill in values
+pnpm dev:backend      # First run: creates Convex project, deploys schema
+pnpm dev              # Start frontend
 ```
 
 ## Environment
 
-- `OPENAI_API_KEY` required in `packages/frontend/.env` for generation and dimension discovery
-- Node >= 18, pnpm for package management
-- TypeScript strict mode, ESM (`"type": "module"`)
+See `packages/frontend/.env.example` for all frontend env vars and `packages/backend/.env.example` for backend.
+
+Key variables:
+- `NEXT_PUBLIC_CONVEX_URL` — Convex deployment URL (from `npx convex dev`)
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY` — Clerk auth keys
+- `OPENAI_API_KEY` — Required in both frontend `.env` and Convex dashboard env vars
+- `LANGSMITH_API_KEY` — Optional, for dataset/experiment sync (set in Convex dashboard too)
+
+Node >= 18, pnpm for package management, TypeScript strict mode, ESM (`"type": "module"`).
 
 ## Architecture notes
 
@@ -92,22 +128,28 @@ The system uses span-based (character-level) evaluation exclusively:
 Three strategies, selectable from the frontend:
 
 - **SimpleStrategy**: Prompt-based. Generates N questions per document.
-- **DimensionDrivenStrategy**: Structured diversity. Pipeline: load dimensions → pairwise filter combinations → summarize docs → build relevance matrix → stratified sample → batch generate per document. Accepts `onProgress` callback for streaming phase events.
+- **DimensionDrivenStrategy**: Structured diversity. Pipeline: load dimensions → pairwise filter combinations → summarize docs → build relevance matrix → stratified sample → batch generate per document.
 - **RealWorldGroundedStrategy**: Matches real-world questions to documents using embedding similarity.
 
 All strategies produce `GeneratedQuery[]`, which are then passed to the `GroundTruthAssigner` to create labeled evaluation data with character spans.
 
-LLM calls in the dimension-driven pipeline are parallelized with `Promise.all` (filtering, summarization, assignment batches).
+### Backend (Convex)
+
+- **Auth**: Clerk JWT with org-scoped access. Every public function calls `getAuthContext(ctx)` to extract userId/orgId.
+- **Job pipeline**: Long-running operations use a batch processor with 8-minute time budget, per-item checkpointing, continuation scheduling, and watchdog recovery.
+- **RAG**: Position-aware chunking (RecursiveCharacterChunker) + OpenAI embeddings + Convex vector search. Chunks store character offsets for direct metric compatibility.
+- **`"use node"` constraint**: Files with `"use node"` can ONLY contain actions. Mutations/queries must be in separate files.
+- **`vectorSearch` constraint**: `ctx.vectorSearch()` is only available in actions, not queries. Pattern: vectorSearch in action → hydrate via internalQuery.
 
 ### Frontend
 
-- State managed in `page.tsx` via React hooks (no global state library)
-- SSE streaming for real-time question generation with phase progress events
-- Dimension config persisted to localStorage (`rag-eval:dimension-config`)
+- Convex reactive queries (`useQuery`/`useMutation`) for real-time UI updates
+- Clerk handles authentication and organization switching
+- ConvexClientProvider with graceful fallback when Clerk/Convex not configured
 - Design system: dark theme, JetBrains Mono, custom color tokens (accent: `#6ee7b7`)
 
 ### Testing
 
-- Unit tests in `packages/eval-lib/tests/` with vitest
+- eval-lib: 133 vitest tests covering strategies, ground-truth assigners, metrics, types, and utilities
+- backend: 5 convex-test integration tests for batch processor
 - Mock LLM clients for testing strategies (return canned JSON responses)
-- 104 tests covering strategies, ground-truth assigners, metrics, types, and utilities

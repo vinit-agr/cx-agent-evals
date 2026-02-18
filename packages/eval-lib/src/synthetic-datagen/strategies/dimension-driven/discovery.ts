@@ -1,4 +1,3 @@
-import { writeFile } from "node:fs/promises";
 import type { LLMClient } from "../../base.js";
 import type { Dimension } from "../types.js";
 
@@ -31,7 +30,7 @@ Output JSON format:
 
 export interface DiscoverDimensionsOptions {
   readonly url: string;
-  readonly outputPath: string;
+  readonly outputPath?: string;
   readonly llmClient: LLMClient;
   readonly model: string;
   readonly fetchPage?: (url: string) => Promise<string>;
@@ -75,7 +74,13 @@ export async function discoverDimensions(
   const data = JSON.parse(response);
   const dimensions: Dimension[] = data.dimensions ?? [];
 
-  await writeFile(options.outputPath, JSON.stringify({ dimensions }, null, 2));
+  if (options.outputPath) {
+    const { writeFile } = await import("node:fs/promises");
+    await writeFile(
+      options.outputPath,
+      JSON.stringify({ dimensions }, null, 2),
+    );
+  }
 
   return dimensions;
 }

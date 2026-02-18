@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { readdir, readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
 import type { DocumentId } from "./primitives.js";
 import { DocumentId as DocumentIdFactory } from "./primitives.js";
 
@@ -49,38 +47,45 @@ export function createCorpus(documents: Document[], metadata?: Record<string, un
   };
 }
 
+/**
+ * Load a corpus from a folder on disk.
+ * Requires Node.js — uses dynamic imports for fs/path to stay tree-shakeable.
+ */
 export async function corpusFromFolder(
   folderPath: string,
   globPattern: string = "**/*.md",
 ): Promise<Corpus> {
+  const { readdir, readFile } = await import("node:fs/promises");
+  const { join, relative } = await import("node:path");
+
   const documents: Document[] = [];
-  await collectFiles(folderPath, folderPath, globPattern, documents);
-  return createCorpus(documents);
-}
 
-async function collectFiles(
-  baseDir: string,
-  currentDir: string,
-  pattern: string,
-  documents: Document[],
-): Promise<void> {
-  const entries = await readdir(currentDir, { withFileTypes: true });
+  async function collectFiles(
+    baseDir: string,
+    currentDir: string,
+    pattern: string,
+  ): Promise<void> {
+    const entries = await readdir(currentDir, { withFileTypes: true });
 
-  for (const entry of entries) {
-    const fullPath = join(currentDir, entry.name);
+    for (const entry of entries) {
+      const fullPath = join(currentDir, entry.name);
 
-    if (entry.isDirectory()) {
-      await collectFiles(baseDir, fullPath, pattern, documents);
-    } else if (entry.isFile() && matchesGlob(relative(baseDir, fullPath), pattern)) {
-      const content = await readFile(fullPath, "utf-8");
-      documents.push(
-        createDocument({
-          id: relative(baseDir, fullPath),
-          content,
-        }),
-      );
+      if (entry.isDirectory()) {
+        await collectFiles(baseDir, fullPath, pattern);
+      } else if (entry.isFile() && matchesGlob(relative(baseDir, fullPath), pattern)) {
+        const content = await readFile(fullPath, "utf-8");
+        documents.push(
+          createDocument({
+            id: relative(baseDir, fullPath),
+            content,
+          }),
+        );
+      }
     }
   }
+
+  await collectFiles(folderPath, folderPath, globPattern);
+  return createCorpus(documents);
 }
 
 function matchesGlob(filePath: string, pattern: string): boolean {
@@ -92,6 +97,24 @@ function matchesGlob(filePath: string, pattern: string): boolean {
     .replace(/\*\*/g, ".*")
     .replace(/\*/g, "[^/]*");
   return new RegExp(`^${regexStr}$`).test(filePath);
+}
+
+/**
+ * Create a Corpus from plain document objects (no filesystem access).
+ * Use this in environments without Node.js fs APIs (e.g., Convex actions).
+ */
+export function createCorpusFromDocuments(
+  docs: ReadonlyArray<{
+    id: string;
+    content: string;
+    metadata?: Record<string, unknown>;
+  }>,
+  metadata?: Record<string, unknown>,
+): Corpus {
+  const documents = docs.map((d) =>
+    createDocument({ id: d.id, content: d.content, metadata: d.metadata }),
+  );
+  return createCorpus(documents, metadata);
 }
 
 export function getDocument(corpus: Corpus, docId: DocumentId): Document | undefined {

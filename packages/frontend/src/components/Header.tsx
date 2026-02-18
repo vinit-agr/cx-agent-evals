@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 
 interface HeaderProps {
   mode?: "generate" | "experiments";
@@ -46,14 +47,31 @@ export function Header({ mode, onReset }: HeaderProps) {
             </>
           )}
         </div>
-        {onReset && (
-          <button
-            onClick={onReset}
-            className="text-xs text-text-dim hover:text-text transition-colors cursor-pointer"
-          >
-            reset
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {onReset && (
+            <button
+              onClick={onReset}
+              className="text-xs text-text-dim hover:text-text transition-colors cursor-pointer"
+            >
+              reset
+            </button>
+          )}
+          <OrganizationSwitcher
+            appearance={{
+              elements: {
+                rootBox: "text-sm",
+                organizationSwitcherTrigger: "text-text-muted hover:text-text",
+              },
+            }}
+          />
+          <UserButton
+            appearance={{
+              elements: {
+                avatarBox: "w-7 h-7",
+              },
+            }}
+          />
+        </div>
       </div>
     </header>
   );

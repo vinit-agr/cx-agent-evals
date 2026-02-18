@@ -25,6 +25,7 @@ export {
   CorpusSchema,
   createDocument,
   createCorpus,
+  createCorpusFromDocuments,
   corpusFromFolder,
   getDocument,
   CharacterSpanSchema,
@@ -39,6 +40,7 @@ export { isPositionAwareChunker, RecursiveCharacterChunker } from "./chunkers/in
 
 // Embedder
 export type { Embedder } from "./embedders/index.js";
+export { OpenAIEmbedder } from "./embedders/index.js";
 
 // Vector Store
 export type { VectorStore } from "./vector-stores/index.js";
@@ -57,10 +59,11 @@ export { recall, precision, iou, f1 } from "./evaluation/metrics/index.js";
 export { mergeOverlappingSpans, calculateOverlap, totalSpanLength } from "./evaluation/metrics/utils.js";
 
 // Experiments
-export { VectorRAGRetriever } from "./experiments/index.js";
+export { VectorRAGRetriever, CallbackRetriever } from "./experiments/index.js";
 export type {
   Retriever,
   VectorRAGRetrieverConfig,
+  CallbackRetrieverConfig,
 } from "./experiments/index.js";
 
 // Synthetic Data Generation
@@ -72,7 +75,11 @@ export { SimpleStrategy } from "./synthetic-datagen/strategies/simple/generator.
 export { DimensionDrivenStrategy } from "./synthetic-datagen/strategies/dimension-driven/generator.js";
 export { RealWorldGroundedStrategy } from "./synthetic-datagen/strategies/real-world-grounded/generator.js";
 export { discoverDimensions } from "./synthetic-datagen/strategies/dimension-driven/discovery.js";
-export { loadDimensions } from "./synthetic-datagen/strategies/dimension-driven/dimensions.js";
+export {
+  loadDimensions,
+  loadDimensionsFromFile,
+  parseDimensions,
+} from "./synthetic-datagen/strategies/dimension-driven/dimensions.js";
 export { GroundTruthAssigner } from "./synthetic-datagen/ground-truth/token-level.js";
 export type {
   Assigner,
@@ -113,10 +120,10 @@ export type {
 } from "./langsmith/index.js";
 
 // LangSmith experiment runner is available via:
-//   import { runLangSmithExperiment } from "rag-evaluation-system/langsmith"
+//   import { runLangSmithExperiment } from "rag-evaluation-system/langsmith/experiment-runner"
 // It is NOT re-exported from the main index to avoid pulling langsmith
 // into the module graph for consumers that don't need experiment running.
-export type { LangSmithExperimentConfig } from "./langsmith/index.js";
+export type { LangSmithExperimentConfig, ExperimentResult } from "./langsmith/index.js";
 
 // Utils
 export { generatePaChunkId } from "./utils/hashing.js";

@@ -23,7 +23,11 @@ export { SimpleStrategy } from "./strategies/simple/generator.js";
 export { DimensionDrivenStrategy } from "./strategies/dimension-driven/generator.js";
 export { RealWorldGroundedStrategy } from "./strategies/real-world-grounded/generator.js";
 export { discoverDimensions } from "./strategies/dimension-driven/discovery.js";
-export { loadDimensions } from "./strategies/dimension-driven/dimensions.js";
+export {
+  loadDimensions,
+  loadDimensionsFromFile,
+  parseDimensions,
+} from "./strategies/dimension-driven/dimensions.js";
 export { GroundTruthAssigner } from "./ground-truth/token-level.js";
 export type { Assigner, GroundTruthAssignerInterface, GroundTruthAssignerContext } from "./ground-truth/types.js";
 

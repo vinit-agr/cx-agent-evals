@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import ConvexClientProvider from "@/components/ConvexClientProvider";
+import { AuthGate } from "@/components/AuthGate";
 
 const jetbrains = JetBrains_Mono({
   variable: "--font-jetbrains",
@@ -25,7 +27,9 @@ export default function RootLayout({
         className={`${jetbrains.variable} min-h-screen bg-bg text-text antialiased`}
         style={{ fontFamily: "var(--font-jetbrains), ui-monospace, monospace" }}
       >
-        {children}
+        <ConvexClientProvider>
+          <AuthGate>{children}</AuthGate>
+        </ConvexClientProvider>
       </body>
     </html>
   );
