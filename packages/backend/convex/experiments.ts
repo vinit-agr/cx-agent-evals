@@ -48,10 +48,10 @@ export const start = mutation({
       createdAt: Date.now(),
     });
 
-    // Schedule the indexing phase
+    // Schedule the experiment action
     await ctx.scheduler.runAfter(
       0,
-      internal.experimentActions.runIndexing,
+      internal.experimentActions.runExperiment,
       {
         jobId,
         experimentId,

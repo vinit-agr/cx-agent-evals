@@ -10,7 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@langchain/core": ">=0.1.0",
     "convex": "^1.21.0",
+    "langsmith": ">=0.1.0",
     "openai": "^4.70.0",
     "rag-evaluation-system": "workspace:*"
   },

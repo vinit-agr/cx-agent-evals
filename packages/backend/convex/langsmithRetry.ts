@@ -22,23 +22,5 @@ export const retryDatasetSync = mutation({
   },
 });
 
-/**
- * Manually retry a failed LangSmith sync for an experiment.
- */
-export const retryExperimentSync = mutation({
-  args: { experimentId: v.id("experiments") },
-  handler: async (ctx, args) => {
-    const { orgId } = await getAuthContext(ctx);
-
-    const experiment = await ctx.db.get(args.experimentId);
-    if (!experiment || experiment.orgId !== orgId) {
-      throw new Error("Experiment not found");
-    }
-
-    await ctx.scheduler.runAfter(
-      0,
-      internal.langsmithSync.syncExperiment,
-      { experimentId: args.experimentId },
-    );
-  },
-});
+// retryExperimentSync removed — experiment sync is now handled natively
+// by evaluate() inside runLangSmithExperiment(). No separate sync step needed.

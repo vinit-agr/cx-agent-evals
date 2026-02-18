@@ -59,10 +59,11 @@ export { recall, precision, iou, f1 } from "./evaluation/metrics/index.js";
 export { mergeOverlappingSpans, calculateOverlap, totalSpanLength } from "./evaluation/metrics/utils.js";
 
 // Experiments
-export { VectorRAGRetriever } from "./experiments/index.js";
+export { VectorRAGRetriever, CallbackRetriever } from "./experiments/index.js";
 export type {
   Retriever,
   VectorRAGRetrieverConfig,
+  CallbackRetrieverConfig,
 } from "./experiments/index.js";
 
 // Synthetic Data Generation
@@ -119,10 +120,10 @@ export type {
 } from "./langsmith/index.js";
 
 // LangSmith experiment runner is available via:
-//   import { runLangSmithExperiment } from "rag-evaluation-system/langsmith"
+//   import { runLangSmithExperiment } from "rag-evaluation-system/langsmith/experiment-runner"
 // It is NOT re-exported from the main index to avoid pulling langsmith
 // into the module graph for consumers that don't need experiment running.
-export type { LangSmithExperimentConfig } from "./langsmith/index.js";
+export type { LangSmithExperimentConfig, ExperimentResult } from "./langsmith/index.js";
 
 // Utils
 export { generatePaChunkId } from "./utils/hashing.js";

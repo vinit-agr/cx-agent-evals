@@ -9,7 +9,7 @@ interface SerializedSpan {
   text: string;
 }
 
-function deserializeSpans(raw: unknown): CharacterSpan[] {
+export function deserializeSpans(raw: unknown): CharacterSpan[] {
   if (!Array.isArray(raw)) return [];
   return raw.map((s: SerializedSpan) => ({
     docId: DocumentId(s.docId),

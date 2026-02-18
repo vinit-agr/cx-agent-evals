@@ -4,22 +4,26 @@ import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { processBatch } from "./lib/batchProcessor";
 import { indexSingleDocument } from "./ragActions";
 import {
-  recall,
-  precision,
-  iou,
-  f1,
+  CallbackRetriever,
+  createCorpusFromDocuments,
+  createDocument,
+  DocumentId,
+  PositionAwareChunkId,
   OpenAIEmbedder,
-  type Metric,
+  uploadDataset,
+  QueryId,
+  QueryText,
+  type GroundTruth,
   type CharacterSpan,
+  type PositionAwareChunk,
+  type ExperimentResult,
 } from "rag-evaluation-system";
+import { runLangSmithExperiment } from "rag-evaluation-system/langsmith/experiment-runner";
 import OpenAI from "openai";
 
 // ─── Helpers ───
-
-const METRICS: Record<string, Metric> = { recall, precision, iou, f1 };
 
 function createEmbedder(model?: string) {
   const apiKey = process.env.OPENAI_API_KEY;
@@ -31,13 +35,16 @@ function createEmbedder(model?: string) {
   });
 }
 
-// ─── Phase 1: Indexing ───
+// ─── Single-Action Experiment Runner ───
 
 /**
- * Index the knowledge base for an experiment.
- * Skips if already indexed; otherwise chunks + embeds all documents.
+ * Run an experiment end-to-end:
+ * 1. Ensure KB is indexed
+ * 2. Ensure dataset is synced to LangSmith
+ * 3. Run evaluation via runLangSmithExperiment() with CallbackRetriever
+ * 4. Aggregate scores and mark complete
  */
-export const runIndexing = internalAction({
+export const runExperiment = internalAction({
   args: {
     jobId: v.id("jobs"),
     experimentId: v.id("experiments"),
@@ -45,287 +52,260 @@ export const runIndexing = internalAction({
     kbId: v.id("knowledgeBases"),
   },
   handler: async (ctx, args) => {
-    // Check if KB is already indexed
-    const isIndexed = await ctx.runQuery(internal.rag.isIndexed, {
-      kbId: args.kbId,
-    });
-
-    if (isIndexed) {
+    try {
       await ctx.runMutation(internal.jobs.update, {
         jobId: args.jobId,
         status: "running",
-        phase: "indexing",
-        progress: {
-          current: 1,
-          total: 1,
-          message: "KB already indexed, skipping...",
-        },
+        phase: "initializing",
+        progress: { current: 0, total: 4, message: "Starting experiment..." },
       });
 
-      // Go directly to evaluation
-      await ctx.scheduler.runAfter(
-        0,
-        internal.experimentActions.runEvaluation,
-        {
-          jobId: args.jobId,
-          experimentId: args.experimentId,
-          datasetId: args.datasetId,
+      // ── Step 1: Ensure KB is indexed ──
+      const isIndexed = await ctx.runQuery(internal.rag.isIndexed, {
+        kbId: args.kbId,
+      });
+
+      if (!isIndexed) {
+        const docs = await ctx.runQuery(internal.documents.listByKbInternal, {
           kbId: args.kbId,
-        },
-      );
-      return;
-    }
+        });
 
-    // Initialize indexing items on first run
-    const progress = await ctx.runQuery(internal.jobItems.getProgress, {
-      jobId: args.jobId,
-      phase: "indexing",
-    });
+        for (let i = 0; i < docs.length; i++) {
+          await ctx.runMutation(internal.jobs.update, {
+            jobId: args.jobId,
+            phase: "indexing",
+            progress: {
+              current: i,
+              total: docs.length,
+              message: `Indexing document ${i + 1}/${docs.length}...`,
+            },
+          });
+          await indexSingleDocument(ctx, docs[i]._id, {});
+        }
+      }
 
-    if (progress.total === 0) {
+      // ── Step 2: Ensure dataset is synced to LangSmith ──
+      let dataset = await ctx.runQuery(internal.datasets.getInternal, {
+        id: args.datasetId,
+      });
+
+      if (!dataset.langsmithDatasetId) {
+        await ctx.runMutation(internal.jobs.update, {
+          jobId: args.jobId,
+          phase: "syncing",
+          progress: { current: 1, total: 4, message: "Syncing dataset to LangSmith..." },
+        });
+
+        const questions = await ctx.runQuery(
+          internal.questions.byDatasetInternal,
+          { datasetId: args.datasetId },
+        );
+
+        if (questions.length > 0) {
+          const groundTruth: GroundTruth[] = questions.map(
+            (q: any, i: number) => ({
+              query: {
+                id: QueryId(q.queryId || `q_${i}`),
+                text: QueryText(q.queryText),
+                metadata: {
+                  sourceDoc: q.sourceDocId,
+                  ...(q.metadata ?? {}),
+                },
+              },
+              relevantSpans: (q.relevantSpans ?? []).map(
+                (s: any) =>
+                  ({
+                    docId: DocumentId(s.docId),
+                    start: s.start,
+                    end: s.end,
+                    text: s.text,
+                  }) as CharacterSpan,
+              ),
+            }),
+          );
+
+          const result = await uploadDataset(groundTruth, {
+            datasetName: dataset.name,
+            description: `RAG evaluation dataset: ${dataset.strategy} strategy, ${questions.length} questions`,
+            metadata: {
+              strategy: dataset.strategy,
+              convexDatasetId: args.datasetId,
+            },
+          });
+
+          await ctx.runMutation(internal.datasets.updateSyncStatus, {
+            datasetId: args.datasetId,
+            langsmithDatasetId: result.datasetName,
+            langsmithUrl: result.datasetUrl,
+            langsmithSyncStatus: "synced",
+          });
+
+          // Refresh dataset to get the LangSmith name
+          dataset = await ctx.runQuery(internal.datasets.getInternal, {
+            id: args.datasetId,
+          });
+        }
+      }
+
+      // ── Step 3: Build corpus and retriever ──
+      await ctx.runMutation(internal.jobs.update, {
+        jobId: args.jobId,
+        phase: "evaluating",
+        progress: { current: 2, total: 4, message: "Running evaluation via LangSmith..." },
+      });
+
+      const experiment = await ctx.runQuery(internal.experiments.getInternal, {
+        id: args.experimentId,
+      });
+
+      // Load all documents to build corpus
       const docs = await ctx.runQuery(internal.documents.listByKbInternal, {
         kbId: args.kbId,
       });
-      await ctx.runMutation(internal.jobItems.initPhase, {
-        jobId: args.jobId,
-        phase: "indexing",
-        items: docs.map((d: any) => ({ itemKey: d._id })),
-      });
-    }
+      const corpus = createCorpusFromDocuments(
+        docs.map((d: any) => createDocument({ id: d.docId, content: d.content })),
+      );
 
-    await processBatch(ctx, {
-      jobId: args.jobId,
-      phase: "indexing",
-      batchSize: 10,
-      processItem: async (item) => {
-        const docId = item.itemKey as Id<"documents">;
-        return await indexSingleDocument(ctx, docId, {});
-      },
-      phaseMessage: "Indexing documents",
-      continuationAction: internal.experimentActions.runIndexing,
-      continuationArgs: {
-        experimentId: args.experimentId,
-        datasetId: args.datasetId,
-        kbId: args.kbId,
-      },
-      nextPhaseAction: internal.experimentActions.runEvaluation,
-      nextPhaseArgs: {
-        experimentId: args.experimentId,
-        datasetId: args.datasetId,
-        kbId: args.kbId,
-      },
-    });
-  },
-});
+      // Create embedder for query embedding
+      const retrieverConfig = experiment.retrieverConfig as Record<string, unknown>;
+      const embeddingModel =
+        (retrieverConfig.embeddingModel as string) ?? "text-embedding-3-small";
+      const embedder = createEmbedder(embeddingModel);
 
-// ─── Phase 2: Evaluation ───
-
-/**
- * Evaluate each question: retrieve chunks, compute metrics, save results.
- * Phase: "evaluation" — one job item per question.
- */
-export const runEvaluation = internalAction({
-  args: {
-    jobId: v.id("jobs"),
-    experimentId: v.id("experiments"),
-    datasetId: v.id("datasets"),
-    kbId: v.id("knowledgeBases"),
-  },
-  handler: async (ctx, args) => {
-    // Initialize evaluation items on first run
-    const progress = await ctx.runQuery(internal.jobItems.getProgress, {
-      jobId: args.jobId,
-      phase: "evaluation",
-    });
-
-    if (progress.total === 0) {
+      // Build query → questionId lookup for onResult callback
       const questions = await ctx.runQuery(
         internal.questions.byDatasetInternal,
         { datasetId: args.datasetId },
       );
-      await ctx.runMutation(internal.jobItems.initPhase, {
-        jobId: args.jobId,
-        phase: "evaluation",
-        items: questions.map((q: any) => ({ itemKey: q._id })),
-      });
-    }
+      const queryToQuestionId = new Map<string, Id<"questions">>();
+      for (const q of questions) {
+        queryToQuestionId.set(q.queryText, q._id);
+      }
 
-    // Load experiment config for k and metric names
-    const experiment = await ctx.runQuery(internal.experiments.getInternal, {
-      id: args.experimentId,
-    });
-    const k = experiment.k;
-    const metricNames = experiment.metricNames;
-    const selectedMetrics = metricNames
-      .map((name: string) => METRICS[name])
-      .filter(Boolean);
-
-    // Create embedder for query embedding
-    const retrieverConfig = experiment.retrieverConfig as Record<
-      string,
-      unknown
-    >;
-    const embeddingModel =
-      (retrieverConfig.embeddingModel as string) ?? "text-embedding-3-small";
-    const embedder = createEmbedder(embeddingModel);
-
-    await processBatch(ctx, {
-      jobId: args.jobId,
-      phase: "evaluation",
-      batchSize: 20,
-      processItem: async (item) => {
-        const questionId = item.itemKey as Id<"questions">;
-        const question = await ctx.runQuery(internal.questions.getInternal, {
-          id: questionId,
-        });
-
-        // Embed query and vector search (vectorSearch only available in actions)
-        const queryEmbedding = await embedder.embedQuery(question.queryText);
-        const searchResults = await ctx.vectorSearch(
-          "documentChunks",
-          "by_embedding",
-          {
-            vector: queryEmbedding,
-            limit: k,
-            filter: (q: any) => q.eq("kbId", args.kbId),
-          },
-        );
-
-        // Hydrate chunk records with docId
-        const chunks = await ctx.runQuery(internal.rag.fetchChunksWithDocs, {
-          ids: searchResults.map((r: any) => r._id),
-        });
-
-        // Convert retrieved chunks to CharacterSpan format
-        const retrievedSpans = chunks.map((c: any) => ({
-          docId: c.docId,
-          start: c.start,
-          end: c.end,
-          text: c.content,
-        }));
-
-        // Ground truth spans from the question
-        const groundTruthSpans = (question.relevantSpans ?? []) as Array<{
-          docId: string;
-          start: number;
-          end: number;
-          text: string;
-        }>;
-
-        // Compute metrics
-        const scores: Record<string, number> = {};
-        for (const metric of selectedMetrics) {
-          scores[metric.name] = metric.calculate(
-            retrievedSpans as unknown as CharacterSpan[],
-            groundTruthSpans as unknown as CharacterSpan[],
+      // Create CallbackRetriever backed by Convex vector search
+      const retriever = new CallbackRetriever({
+        name: "convex-vector-search",
+        retrieveFn: async (query: string, topK: number) => {
+          const queryEmbedding = await embedder.embedQuery(query);
+          const searchResults = await ctx.vectorSearch(
+            "documentChunks",
+            "by_embedding",
+            {
+              vector: queryEmbedding,
+              limit: topK,
+              filter: (q: any) => q.eq("kbId", args.kbId),
+            },
           );
-        }
 
-        // Save result
-        await ctx.runMutation(internal.experimentResults.insert, {
+          const chunks = await ctx.runQuery(internal.rag.fetchChunksWithDocs, {
+            ids: searchResults.map((r: any) => r._id),
+          });
+
+          return chunks.map(
+            (c: any): PositionAwareChunk => ({
+              id: PositionAwareChunkId(c.chunkId),
+              content: c.content,
+              metadata: c.metadata ?? {},
+              docId: DocumentId(c.docId),
+              start: c.start,
+              end: c.end,
+            }),
+          );
+        },
+      });
+
+      // ── Step 4: Run experiment via LangSmith evaluate() ──
+      let resultsCount = 0;
+
+      await runLangSmithExperiment({
+        corpus,
+        retriever,
+        k: experiment.k,
+        datasetName: dataset.name,
+        experimentPrefix: experiment.name,
+        metadata: {
           experimentId: args.experimentId,
-          questionId,
-          retrievedSpans,
-          scores,
-          metadata: {},
-        });
+          retrieverConfig: experiment.retrieverConfig,
+        },
+        onResult: async (result: ExperimentResult) => {
+          const questionId = queryToQuestionId.get(result.query);
+          if (questionId) {
+            await ctx.runMutation(internal.experimentResults.insert, {
+              experimentId: args.experimentId,
+              questionId,
+              retrievedSpans: result.retrievedSpans,
+              scores: result.scores,
+              metadata: {},
+            });
+          }
+          resultsCount++;
+          await ctx.runMutation(internal.jobs.update, {
+            jobId: args.jobId,
+            progress: {
+              current: resultsCount,
+              total: questions.length,
+              message: `Evaluated ${resultsCount}/${questions.length} questions`,
+            },
+          });
+        },
+      });
 
-        return scores;
-      },
-      phaseMessage: "Evaluating questions",
-      continuationAction: internal.experimentActions.runEvaluation,
-      continuationArgs: {
-        experimentId: args.experimentId,
-        datasetId: args.datasetId,
-        kbId: args.kbId,
-      },
-      nextPhaseAction: internal.experimentActions.runAggregation,
-      nextPhaseArgs: {
-        experimentId: args.experimentId,
-      },
-    });
-  },
-});
+      // ── Step 5: Aggregate scores ──
+      await ctx.runMutation(internal.jobs.update, {
+        jobId: args.jobId,
+        phase: "aggregating",
+        progress: { current: 3, total: 4, message: "Computing average scores..." },
+      });
 
-// ─── Phase 3: Aggregation ───
+      const results = await ctx.runQuery(
+        internal.experimentResults.byExperimentInternal,
+        { experimentId: args.experimentId },
+      );
 
-/**
- * Aggregate per-question scores into experiment-level averages.
- */
-export const runAggregation = internalAction({
-  args: {
-    jobId: v.id("jobs"),
-    experimentId: v.id("experiments"),
-  },
-  handler: async (ctx, args) => {
-    await ctx.runMutation(internal.jobs.update, {
-      jobId: args.jobId,
-      status: "running",
-      phase: "aggregation",
-      progress: { current: 0, total: 1, message: "Computing average scores..." },
-    });
+      const metricNames = experiment.metricNames;
+      const avgScores: Record<string, number> = {};
 
-    // Fetch all results for this experiment
-    const experiment = await ctx.runQuery(internal.experiments.getInternal, {
-      id: args.experimentId,
-    });
+      for (const name of metricNames) {
+        const values = results
+          .map((r: any) => (r.scores as Record<string, number>)[name])
+          .filter((v: unknown): v is number => typeof v === "number");
 
-    const results = await ctx.runQuery(
-      internal.experimentResults.byExperimentInternal,
-      { experimentId: args.experimentId },
-    );
+        avgScores[name] =
+          values.length > 0
+            ? values.reduce((a: number, b: number) => a + b, 0) / values.length
+            : 0;
+      }
 
-    if (results.length === 0) {
+      // Update experiment with final scores
       await ctx.runMutation(internal.experiments.updateStatus, {
         experimentId: args.experimentId,
         status: "completed",
-        scores: {},
+        scores: avgScores,
       });
+
       await ctx.runMutation(internal.jobs.update, {
         jobId: args.jobId,
         status: "completed",
-        result: { experimentId: args.experimentId, scores: {} },
+        phase: "done",
+        progress: { current: 4, total: 4, message: "Experiment complete" },
+        result: {
+          experimentId: args.experimentId,
+          scores: avgScores,
+          totalQuestions: results.length,
+        },
       });
-      return;
-    }
-
-    // Average scores across all results
-    const metricNames = experiment.metricNames;
-    const avgScores: Record<string, number> = {};
-
-    for (const name of metricNames) {
-      const values = results
-        .map((r: any) => (r.scores as Record<string, number>)[name])
-        .filter((v: unknown): v is number => typeof v === "number");
-
-      avgScores[name] =
-        values.length > 0
-          ? values.reduce((a: number, b: number) => a + b, 0) / values.length
-          : 0;
-    }
-
-    // Update experiment with final scores
-    await ctx.runMutation(internal.experiments.updateStatus, {
-      experimentId: args.experimentId,
-      status: "completed",
-      scores: avgScores,
-    });
-
-    await ctx.runMutation(internal.jobs.update, {
-      jobId: args.jobId,
-      status: "completed",
-      result: {
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await ctx.runMutation(internal.experiments.updateStatus, {
         experimentId: args.experimentId,
-        scores: avgScores,
-        totalQuestions: results.length,
-      },
-    });
-
-    // Fire-and-forget LangSmith sync
-    await ctx.scheduler.runAfter(
-      0,
-      internal.langsmithSync.syncExperiment,
-      { experimentId: args.experimentId },
-    );
+        status: "failed",
+        error: message,
+      });
+      await ctx.runMutation(internal.jobs.update, {
+        jobId: args.jobId,
+        status: "failed",
+        error: message,
+      });
+    }
   },
 });
