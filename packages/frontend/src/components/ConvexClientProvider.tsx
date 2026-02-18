@@ -3,6 +3,7 @@
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { ConvexReactClient } from "convex/react";
 import { ClerkProvider, useAuth } from "@clerk/nextjs";
+import { dark } from "@clerk/themes";
 import { ReactNode } from "react";
 
 const convexUrl = process.env.NEXT_PUBLIC_CONVEX_URL;
@@ -39,7 +40,22 @@ export default function ConvexClientProvider({
   }
 
   return (
-    <ClerkProvider publishableKey={clerkKey}>
+    <ClerkProvider
+      publishableKey={clerkKey}
+      appearance={{
+        baseTheme: dark,
+        variables: {
+          colorBackground: "#141419",
+          colorInputBackground: "#1a1a22",
+          colorPrimary: "#6ee7b7",
+          colorText: "#e8e8ed",
+          colorTextSecondary: "#8888a0",
+          colorTextOnPrimaryBackground: "#0c0c0f",
+          colorInputText: "#e8e8ed",
+          colorNeutral: "#8888a0",
+        },
+      }}
+    >
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
         {children}
       </ConvexProviderWithClerk>

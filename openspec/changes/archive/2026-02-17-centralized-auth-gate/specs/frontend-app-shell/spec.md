@@ -1,15 +1,4 @@
-## Purpose
-
-Next.js application shell with centralized auth, mode-based navigation, and Clerk+Convex integration.
-
-## Requirements
-
-### Requirement: Next.js project in frontend directory
-The system SHALL provide a Next.js application in `frontend/` using the App Router, React 19, Tailwind CSS, and TypeScript. The library SHALL be linked locally via `file:..` dependency. The application SHALL support multiple pages for different modes.
-
-#### Scenario: Project starts successfully
-- **WHEN** user runs `pnpm dev` inside `frontend/`
-- **THEN** the application starts on `localhost:3000` and renders the home page
+## ADDED Requirements
 
 ### Requirement: Root-level AuthGate component
 The system SHALL provide an `AuthGate` client component in `src/components/AuthGate.tsx` that wraps all page content in the root layout. It SHALL use `useConvexAuth()` from `convex/react` for authentication state and `useOrganization()` from `@clerk/nextjs` for organization state. The AuthGate SHALL enforce the following state machine in order: (1) if auth is loading, render a branded loading screen, (2) if user is not authenticated, render a branded landing page with sign-in/sign-up, (3) if user has no active organization, auto-select the first available org or show an org setup screen, (4) if all checks pass, render children.
@@ -73,9 +62,13 @@ The OrgGate SHALL verify that `useAuth().orgId` matches `useOrganization().organ
 - **WHEN** the active organization changes (via auto-select or manual switch)
 - **THEN** the OrgGate SHALL show a spinner until the Clerk auth session and Convex token are both updated
 
+## MODIFIED Requirements
+
 ### Requirement: Home page shows mode selection with navbar
 - **WHEN** an authenticated user with an active org visits the home page
 - **THEN** the app SHALL display the Header component (with navbar, org switcher, user avatar) and mode selection cards for "Generate Questions" and "Run Experiments"
+
+Note: The home page content is unchanged, but it now includes the Header (previously only on generate/experiments pages) and is only visible to authenticated users with an active organization, enforced by the root-level AuthGate.
 
 #### Scenario: Home page shows header and mode selection
 - **WHEN** an authenticated user with an active org visits the home page
@@ -85,27 +78,12 @@ The OrgGate SHALL verify that `useAuth().orgId` matches `useOrganization().organ
 - **WHEN** an unauthenticated user visits the home page
 - **THEN** the AuthGate SHALL show the landing page instead of mode selection
 
-### Requirement: Shared layout with mode tabs
-The application layout SHALL display mode tabs in the header when on generate or experiments pages. The tabs SHALL indicate the active mode and allow navigation between modes.
+## REMOVED Requirements
 
-#### Scenario: Mode tabs in header
-- **WHEN** user is on the generate or experiments page
-- **THEN** the header SHALL display mode tabs showing both options with the current mode highlighted
+### Requirement: Per-page auth wrappers on generate page
+**Reason**: Replaced by centralized AuthGate at root layout level. Individual pages no longer need `Authenticated`/`Unauthenticated`/`AuthLoading` wrappers or `OrgRequired` components.
+**Migration**: Remove auth wrapper imports and components from `generate/page.tsx`. The page component now only contains business logic.
 
-#### Scenario: Tabs navigate between modes
-- **WHEN** user clicks an inactive mode tab
-- **THEN** the app SHALL navigate to that mode's page
-
-### Requirement: Generate page route
-The system SHALL provide a `/generate` page that contains the existing question generation flow (corpus loader, strategy config, question list, document viewer).
-
-#### Scenario: Generate page renders existing flow
-- **WHEN** user navigates to `/generate`
-- **THEN** the page SHALL display the full question generation UI with 3-column layout
-
-### Requirement: Experiments page route
-The system SHALL provide an `/experiments` page for running LangSmith experiments.
-
-#### Scenario: Experiments page renders
-- **WHEN** user navigates to `/experiments`
-- **THEN** the page SHALL display the experiments configuration and console UI
+### Requirement: Per-page auth wrappers on experiments page
+**Reason**: Same as above — replaced by centralized AuthGate.
+**Migration**: Remove auth wrapper imports and components from `experiments/page.tsx`. The page component now only contains business logic.

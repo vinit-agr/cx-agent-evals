@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, Authenticated, Unauthenticated, AuthLoading } from "convex/react";
-import { SignInButton, useOrganization, OrganizationSwitcher } from "@clerk/nextjs";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
@@ -26,46 +25,7 @@ interface RetrieverConfig {
   };
 }
 
-function OrgRequired({ children }: { children: React.ReactNode }) {
-  const { organization, isLoaded } = useOrganization();
-
-  if (!isLoaded) {
-    return (
-      <div className="flex flex-col h-screen">
-        <Header mode="experiments" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-        </div>
-      </div>
-    );
-  }
-
-  if (!organization) {
-    return (
-      <div className="flex flex-col h-screen">
-        <Header mode="experiments" />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="text-center space-y-4">
-            <p className="text-text-muted">Select or create an organization to continue</p>
-            <OrganizationSwitcher
-              afterSelectOrganizationUrl="/experiments"
-              afterCreateOrganizationUrl="/experiments"
-              appearance={{
-                elements: {
-                  rootBox: "mx-auto",
-                },
-              }}
-            />
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  return <>{children}</>;
-}
-
-function ExperimentsPageContent() {
+export default function ExperimentsPage() {
   // Dataset selection
   const datasets = useQuery(api.datasets.list);
   const [selectedDatasetId, setSelectedDatasetId] = useState<Id<"datasets"> | null>(null);
@@ -582,37 +542,3 @@ function ExperimentsPageContent() {
   );
 }
 
-export default function ExperimentsPage() {
-  return (
-    <>
-      <AuthLoading>
-        <div className="flex flex-col h-screen">
-          <Header mode="experiments" />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-          </div>
-        </div>
-      </AuthLoading>
-      <Unauthenticated>
-        <div className="flex flex-col h-screen">
-          <Header mode="experiments" />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center space-y-4">
-              <p className="text-text-muted">Sign in to run experiments</p>
-              <SignInButton mode="modal">
-                <button className="px-6 py-2 bg-accent text-bg-elevated rounded-lg hover:bg-accent/90 transition-colors font-medium">
-                  Sign In
-                </button>
-              </SignInButton>
-            </div>
-          </div>
-        </div>
-      </Unauthenticated>
-      <Authenticated>
-        <OrgRequired>
-          <ExperimentsPageContent />
-        </OrgRequired>
-      </Authenticated>
-    </>
-  );
-}

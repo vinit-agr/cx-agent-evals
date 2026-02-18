@@ -36,6 +36,9 @@ pnpm-debug.log*
 # TypeScript
 *.tsbuildinfo
 
+# Playwright
+.playwright-cli/
+
 # Turbopack
 .turbo/
 
