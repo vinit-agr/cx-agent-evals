@@ -12,7 +12,7 @@ The system SHALL provide a Next.js application in `frontend/` using the App Rout
 - **THEN** the application starts on `localhost:3000` and renders the home page
 
 ### Requirement: Root-level AuthGate component
-The system SHALL provide an `AuthGate` client component in `src/components/AuthGate.tsx` that wraps all page content in the root layout. It SHALL use `useConvexAuth()` from `convex/react` for authentication state and `useOrganization()` from `@clerk/nextjs` for organization state. The AuthGate SHALL enforce the following state machine in order: (1) if auth is loading, render a branded loading screen, (2) if user is not authenticated, render a branded landing page with sign-in/sign-up, (3) if user has no active organization, auto-select the first available org or show an org setup screen, (4) if all checks pass, render children.
+The system SHALL provide an `AuthGate` client component in `src/components/AuthGate.tsx` that wraps all page content in the root layout. It SHALL use `useConvexAuth()` from `convex/react` for authentication state and `useOrganization()` from `@clerk/nextjs` for organization state. The AuthGate SHALL enforce the following state machine in order: (1) if auth is loading, render a branded loading screen, (2) if user is not authenticated, render a branded landing page with sign-in/sign-up, (3) if user has no active organization, auto-select the first available org or show an org setup screen, (4) sync the user record via `users:getOrCreate`, (5) if all checks pass, render children.
 
 #### Scenario: Loading state shows branded spinner
 - **WHEN** the auth state is loading (initial page load)

@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useConvexAuth } from "convex/react";
+import { useConvexAuth, useMutation } from "convex/react";
+import { api } from "@/lib/convex";
 import {
   SignInButton,
   SignUpButton,
@@ -91,6 +92,8 @@ function OrgGate({ children }: { children: React.ReactNode }) {
     useOrganizationList({ userMemberships: { infinite: true } });
   const { isLoading: convexLoading } = useConvexAuth();
   const [activating, setActivating] = useState(false);
+  const [userSynced, setUserSynced] = useState(false);
+  const getOrCreateUser = useMutation(api.users.getOrCreate);
 
   // Auto-select first org if user has orgs but none is active
   useEffect(() => {
@@ -141,6 +144,19 @@ function OrgGate({ children }: { children: React.ReactNode }) {
   // 1. Clerk's auth session JWT includes the org_id (clerkAuthOrgId matches)
   // 2. Convex has finished syncing the new token (!convexLoading)
   if (clerkAuthOrgId !== organization.id || convexLoading) {
+    return <BrandedSpinner />;
+  }
+
+  // Ensure the user has a record in the users table before rendering children.
+  // The users:getOrCreate mutation is idempotent — it looks up by clerkId and
+  // creates the record only if missing.
+  useEffect(() => {
+    if (!userSynced) {
+      getOrCreateUser().then(() => setUserSynced(true));
+    }
+  }, [userSynced, getOrCreateUser]);
+
+  if (!userSynced) {
     return <BrandedSpinner />;
   }
 
