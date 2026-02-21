@@ -5,7 +5,7 @@ Retriever interface and baseline implementations for RAG retrieval evaluation.
 ## Requirements
 
 ### Requirement: Retriever interface
-The system SHALL define a `Retriever` interface with `readonly name: string`, `init(corpus: Corpus): Promise<void>`, `retrieve(query: string, k: number): Promise<PositionAwareChunk[]>`, and `cleanup(): Promise<void>`. The interface SHALL always return `PositionAwareChunk[]` for span-based evaluation.
+The system SHALL define a `Retriever` interface with `readonly name: string`, `init(corpus: Corpus): Promise<void>`, `retrieve(query: string, k: number): Promise<PositionAwareChunk[]>`, and `cleanup(): Promise<void>`. The interface SHALL always return `PositionAwareChunk[]` for span-based evaluation. The Retriever interface SHALL be located at `retrievers/retriever.interface.ts` and re-exported from the root `index.ts`.
 
 #### Scenario: Retriever lifecycle
 - **WHEN** using a retriever in an experiment
@@ -15,8 +15,12 @@ The system SHALL define a `Retriever` interface with `readonly name: string`, `i
 - **WHEN** calling `retriever.retrieve(query, k)`
 - **THEN** the result SHALL be an array of up to `k` `PositionAwareChunk` objects containing `id`, `content`, `docId`, `start`, `end`, and `metadata`
 
+#### Scenario: Backward-compatible imports
+- **WHEN** importing `Retriever`, `VectorRAGRetriever`, or `CallbackRetriever` from `rag-evaluation-system`
+- **THEN** the imports SHALL resolve successfully (re-exported from root index.ts)
+
 ### Requirement: VectorRAGRetriever baseline implementation
-The system SHALL provide a `VectorRAGRetriever` class implementing the `Retriever` interface. It SHALL accept a config with `chunker: PositionAwareChunker`, `embedder: Embedder`, optional `vectorStore: VectorStore` (default: InMemoryVectorStore), optional `reranker: Reranker`, and optional `batchSize: number` (default: 100). The chunker SHALL be a `PositionAwareChunker` (not a basic `Chunker`). The `init()` method SHALL chunk the corpus with positions, embed in batches, and add to vector store. The `retrieve()` method SHALL embed the query, search the vector store, optionally rerank, and return `PositionAwareChunk[]`. The `cleanup()` method SHALL clear the vector store.
+The system SHALL provide a `VectorRAGRetriever` class implementing the `Retriever` interface. It SHALL be located at `retrievers/baseline-vector-rag/` and re-exported from the root `index.ts`. It SHALL accept a config with `chunker: PositionAwareChunker`, `embedder: Embedder`, optional `vectorStore: VectorStore` (default: InMemoryVectorStore), optional `reranker: Reranker`, and optional `batchSize: number` (default: 100). The chunker SHALL be a `PositionAwareChunker` (not a basic `Chunker`). The `init()` method SHALL chunk the corpus with positions, embed in batches, and add to vector store. The `retrieve()` method SHALL embed the query, search the vector store, optionally rerank, and return `PositionAwareChunk[]`. The `cleanup()` method SHALL clear the vector store.
 
 #### Scenario: VectorRAGRetriever init chunks and indexes
 - **WHEN** calling `retriever.init(corpus)`
