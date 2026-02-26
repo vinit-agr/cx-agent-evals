@@ -7,8 +7,11 @@ export const start = mutation({
   args: {
     datasetId: v.id("datasets"),
     name: v.string(),
-    retrieverConfig: v.any(),
-    k: v.number(),
+    // New path: reference a ready retriever
+    retrieverId: v.optional(v.id("retrievers")),
+    // Legacy path: inline config
+    retrieverConfig: v.optional(v.any()),
+    k: v.optional(v.number()),
     metricNames: v.array(v.string()),
   },
   handler: async (ctx, args) => {
@@ -26,10 +29,34 @@ export const start = mutation({
       .unique();
     if (!user) throw new Error("User not found");
 
+    // Validate: must provide either retrieverId or retrieverConfig
+    if (!args.retrieverId && !args.retrieverConfig) {
+      throw new Error("Must provide either retrieverId or retrieverConfig");
+    }
+
+    // If using retrieverId, verify the retriever is ready and KB matches
+    if (args.retrieverId) {
+      const retriever = await ctx.db.get(args.retrieverId);
+      if (!retriever || retriever.orgId !== orgId) {
+        throw new Error("Retriever not found");
+      }
+      if (retriever.status !== "ready") {
+        throw new Error(
+          `Retriever is not ready (status: ${retriever.status}). Index the KB first.`,
+        );
+      }
+      if (retriever.kbId !== dataset.kbId) {
+        throw new Error(
+          "Retriever and dataset must belong to the same knowledge base",
+        );
+      }
+    }
+
     const experimentId = await ctx.db.insert("experiments", {
       orgId,
       datasetId: args.datasetId,
       name: args.name,
+      retrieverId: args.retrieverId,
       retrieverConfig: args.retrieverConfig,
       k: args.k,
       metricNames: args.metricNames,
