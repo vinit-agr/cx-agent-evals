@@ -26,7 +26,6 @@ export {
   createDocument,
   createCorpus,
   createCorpusFromDocuments,
-  corpusFromFolder,
   getDocument,
   CharacterSpanSchema,
   createCharacterSpan,
