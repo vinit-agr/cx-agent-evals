@@ -10,13 +10,17 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^2.0.94",
+    "@convex-dev/agent": "^0.3.2",
     "@convex-dev/workpool": "^0.4.0",
     "@langchain/core": ">=0.1.0",
+    "ai": "^5.0.139",
     "convex": "^1.32.0",
     "langsmith": ">=0.1.0",
     "minisearch": "^7.2.0",
     "openai": "^4.70.0",
-    "rag-evaluation-system": "workspace:*"
+    "rag-evaluation-system": "workspace:*",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
