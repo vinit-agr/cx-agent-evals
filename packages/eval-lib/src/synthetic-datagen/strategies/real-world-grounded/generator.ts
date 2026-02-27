@@ -7,7 +7,7 @@ import type {
   MatchedQuestion,
 } from "../types.js";
 import { matchQuestionsToDocuments } from "./matching.js";
-import { generateFewShotQuestions, distributeBudget } from "./generation.js";
+import { generateFewShotQuestions, distributeBudget } from "./few-shot.js";
 
 export class RealWorldGroundedStrategy implements QuestionStrategy {
   readonly name = "real-world-grounded";
