@@ -56,6 +56,17 @@ export function calculateOverlap(
   const mergedA = mergeOverlappingSpans(spansA);
   const mergedB = mergeOverlappingSpans(spansB);
 
+  return calculateOverlapPreMerged(mergedA, mergedB);
+}
+
+/**
+ * Calculate overlap between two sets of spans that have already been merged.
+ * Use this when you have pre-computed merged spans to avoid redundant merging.
+ */
+export function calculateOverlapPreMerged(
+  mergedA: readonly SpanRange[],
+  mergedB: readonly SpanRange[],
+): number {
   let total = 0;
   for (const a of mergedA) {
     for (const b of mergedB) {
@@ -67,4 +78,12 @@ export function calculateOverlap(
 
 export function totalSpanLength(spans: readonly SpanRange[]): number {
   return mergeOverlappingSpans(spans).reduce((sum, s) => sum + spanLength(s), 0);
+}
+
+/**
+ * Calculate total span length from spans that have already been merged.
+ * Use this when you have pre-computed merged spans to avoid redundant merging.
+ */
+export function totalSpanLengthPreMerged(mergedSpans: readonly SpanRange[]): number {
+  return mergedSpans.reduce((sum, s) => sum + spanLength(s), 0);
 }

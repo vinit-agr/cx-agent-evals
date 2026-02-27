@@ -2,4 +2,13 @@ export { mapWithConcurrency } from "./concurrency.js";
 export { generatePaChunkId } from "./hashing.js";
 export { safeParseLLMResponse } from "./json.js";
 export { cosineSimilarity } from "./similarity.js";
-export { spanOverlaps, spanOverlapChars, spanLength, mergeOverlappingSpans, calculateOverlap, totalSpanLength } from "./span.js";
+export {
+  spanOverlaps,
+  spanOverlapChars,
+  spanLength,
+  mergeOverlappingSpans,
+  calculateOverlap,
+  calculateOverlapPreMerged,
+  totalSpanLength,
+  totalSpanLengthPreMerged,
+} from "./span.js";
