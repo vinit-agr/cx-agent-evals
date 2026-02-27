@@ -16,10 +16,6 @@
       "import": "./dist/embedders/openai.js",
       "types": "./dist/embedders/openai.d.ts"
     },
-    "./vector-stores/chroma": {
-      "import": "./dist/vector-stores/chroma.js",
-      "types": "./dist/vector-stores/chroma.d.ts"
-    },
     "./rerankers/cohere": {
       "import": "./dist/rerankers/cohere.js",
       "types": "./dist/rerankers/cohere.d.ts"
@@ -69,7 +65,6 @@
     "langsmith": ">=0.1.0"
   },
   "optionalDependencies": {
-    "chromadb": ">=1.8",
     "cohere-ai": ">=7.0",
     "openai": ">=4.0"
   },
