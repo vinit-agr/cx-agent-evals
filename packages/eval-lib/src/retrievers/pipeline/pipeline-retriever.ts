@@ -100,10 +100,7 @@ export class PipelineRetriever implements Retriever {
 
     // Build BM25 index (needed for "bm25" and "hybrid")
     if (this._searchConfig.strategy === "bm25" || this._searchConfig.strategy === "hybrid") {
-      const bm25Config =
-        this._searchConfig.strategy === "bm25"
-          ? { k1: this._searchConfig.k1, b: this._searchConfig.b }
-          : { k1: this._searchConfig.k1, b: this._searchConfig.b };
+      const bm25Config = { k1: this._searchConfig.k1, b: this._searchConfig.b };
 
       this._bm25Index = new BM25SearchIndex(bm25Config);
       this._bm25Index.build(chunks);
