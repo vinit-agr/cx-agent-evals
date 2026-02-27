@@ -70,6 +70,6 @@
 - [x] 8.2 Write backend tests: `generation.test.ts` — 14 tests covering onQuestionGenerated, onGroundTruthAssigned, getJob (counter logic, phase transitions, phase1Stats, cancellation, auth scoping)
 - [x] 8.3 Write backend tests: `experiments.test.ts` — 10 tests covering onQuestionEvaluated, get query (counter logic, score aggregation, skipped vs failed, zero-totalQuestions guard, cancellation, null return)
 - [x] 8.4 Run `pnpm -C packages/backend test` — 24 tests pass
-- [ ] 8.5 Deploy to dev (`pnpm dev:backend`) and verify schema applies cleanly
-- [ ] 8.6 End-to-end test: simple strategy question generation with GT assignment
-- [ ] 8.7 End-to-end test: experiment run with per-question evaluation and LangSmith sync
+- [x] 8.5 Deploy to dev (`pnpm dev:backend`) and verify schema applies cleanly
+- [x] 8.6 End-to-end test: simple strategy question generation with GT assignment
+- [x] 8.7 End-to-end test: experiment run with per-question evaluation and LangSmith sync

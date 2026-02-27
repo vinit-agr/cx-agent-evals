@@ -83,8 +83,6 @@ async function seedExperiment(
     phase: string;
     totalQuestions: number;
     processedQuestions: number;
-    failedQuestions: number;
-    skippedQuestions: number;
   }> = {},
 ) {
   return await t.run(async (ctx) => {
@@ -97,196 +95,72 @@ async function seedExperiment(
       phase: overrides.phase ?? "evaluating",
       totalQuestions: overrides.totalQuestions ?? 3,
       processedQuestions: overrides.processedQuestions ?? 0,
-      failedQuestions: overrides.failedQuestions ?? 0,
-      skippedQuestions: overrides.skippedQuestions ?? 0,
       createdBy: userId,
       createdAt: Date.now(),
     });
   });
 }
 
-async function seedExperimentResult(
-  t: ReturnType<typeof convexTest>,
-  experimentId: Id<"experiments">,
-  questionId: Id<"questions">,
-  scores: Record<string, number>,
-) {
-  return await t.run(async (ctx) => {
-    return await ctx.db.insert("experimentResults", {
-      experimentId,
-      questionId,
-      retrievedSpans: [{ docId: "doc_1", start: 0, end: 10, text: "some text." }],
-      scores,
-      metadata: {},
-    });
-  });
-}
-
-async function seedQuestion(
-  t: ReturnType<typeof convexTest>,
-  datasetId: Id<"datasets">,
-  index: number,
-) {
-  return await t.run(async (ctx) => {
-    return await ctx.db.insert("questions", {
-      datasetId,
-      queryId: `q_${index}`,
-      queryText: `What is question ${index}?`,
-      sourceDocId: "doc_1",
-      relevantSpans: [{ docId: "doc_1", start: 0, end: 10, text: "some text." }],
-      metadata: {},
-    });
-  });
-}
-
 // ─── Tests ───
 
-describe("experiments: onQuestionEvaluated", () => {
+describe("experiments: onExperimentComplete", () => {
   let t: ReturnType<typeof convexTest>;
 
   beforeEach(() => {
     t = setupTest();
   });
 
-  it("increments processedQuestions on success", async () => {
+  it("does nothing on success (action marks experiment complete)", async () => {
     const userId = await seedUser(t);
     const kbId = await seedKB(t, userId);
     const datasetId = await seedDataset(t, userId, kbId);
-    const questionId = await seedQuestion(t, datasetId, 1);
     const experimentId = await seedExperiment(t, userId, datasetId, {
-      totalQuestions: 3,
-      processedQuestions: 1,
+      status: "completed",
+      phase: "done",
     });
 
-    await t.mutation(internal.experiments.onQuestionEvaluated, {
+    await t.mutation(internal.experiments.onExperimentComplete, {
       workId: "w_fake",
-      context: { experimentId, questionId },
+      context: { experimentId },
       result: { kind: "success", returnValue: {} },
     });
 
     const exp = await t.run(async (ctx) => ctx.db.get(experimentId));
-    expect(exp!.processedQuestions).toBe(2);
-    expect(exp!.failedQuestions).toBe(0);
-    expect(exp!.status).toBe("running");
-  });
-
-  it("increments failedQuestions on failure", async () => {
-    const userId = await seedUser(t);
-    const kbId = await seedKB(t, userId);
-    const datasetId = await seedDataset(t, userId, kbId);
-    const questionId = await seedQuestion(t, datasetId, 1);
-    const experimentId = await seedExperiment(t, userId, datasetId, {
-      totalQuestions: 2,
-    });
-
-    await t.mutation(internal.experiments.onQuestionEvaluated, {
-      workId: "w_fake",
-      context: { experimentId, questionId },
-      result: { kind: "failed", error: "Embedding error" },
-    });
-
-    const exp = await t.run(async (ctx) => ctx.db.get(experimentId));
-    expect(exp!.failedQuestions).toBe(1);
-    expect(exp!.processedQuestions).toBe(0);
-  });
-
-  it("increments skippedQuestions on canceled (I2)", async () => {
-    const userId = await seedUser(t);
-    const kbId = await seedKB(t, userId);
-    const datasetId = await seedDataset(t, userId, kbId);
-    const questionId = await seedQuestion(t, datasetId, 1);
-    const experimentId = await seedExperiment(t, userId, datasetId, {
-      totalQuestions: 2,
-    });
-
-    await t.mutation(internal.experiments.onQuestionEvaluated, {
-      workId: "w_fake",
-      context: { experimentId, questionId },
-      result: { kind: "canceled" },
-    });
-
-    const exp = await t.run(async (ctx) => ctx.db.get(experimentId));
-    expect(exp!.skippedQuestions).toBe(1);
-    expect(exp!.failedQuestions).toBe(0);
-  });
-
-  it("aggregates scores and completes when all questions processed", async () => {
-    const userId = await seedUser(t);
-    const kbId = await seedKB(t, userId);
-    const datasetId = await seedDataset(t, userId, kbId);
-    const q1 = await seedQuestion(t, datasetId, 1);
-    const experimentId = await seedExperiment(t, userId, datasetId, {
-      totalQuestions: 1,
-      processedQuestions: 0,
-    });
-
-    // Seed an experiment result that the aggregation will find
-    await seedExperimentResult(t, experimentId, q1, {
-      recall: 0.8,
-      precision: 0.9,
-      iou: 0.7,
-      f1: 0.85,
-    });
-
-    await t.mutation(internal.experiments.onQuestionEvaluated, {
-      workId: "w_fake",
-      context: { experimentId, questionId: q1 },
-      result: { kind: "success", returnValue: {} },
-    });
-
-    const exp = await t.run(async (ctx) => ctx.db.get(experimentId));
+    // Status should remain "completed" — action already handled it
     expect(exp!.status).toBe("completed");
-    expect(exp!.phase).toBe("done");
-    expect(exp!.completedAt).toBeDefined();
-
-    const scores = exp!.scores as Record<string, number>;
-    expect(scores.recall).toBeCloseTo(0.8);
-    expect(scores.precision).toBeCloseTo(0.9);
-    expect(scores.iou).toBeCloseTo(0.7);
-    expect(scores.f1).toBeCloseTo(0.85);
   });
 
-  it("completes as completed_with_errors when some questions failed", async () => {
+  it("marks experiment as failed when action fails", async () => {
     const userId = await seedUser(t);
     const kbId = await seedKB(t, userId);
     const datasetId = await seedDataset(t, userId, kbId);
-    const q1 = await seedQuestion(t, datasetId, 1);
     const experimentId = await seedExperiment(t, userId, datasetId, {
-      totalQuestions: 2,
-      processedQuestions: 0,
-      failedQuestions: 1, // One already failed
+      status: "running",
     });
 
-    await seedExperimentResult(t, experimentId, q1, {
-      recall: 0.5,
-      precision: 0.5,
-      iou: 0.5,
-      f1: 0.5,
-    });
-
-    await t.mutation(internal.experiments.onQuestionEvaluated, {
+    await t.mutation(internal.experiments.onExperimentComplete, {
       workId: "w_fake",
-      context: { experimentId, questionId: q1 },
-      result: { kind: "success", returnValue: {} },
+      context: { experimentId },
+      result: { kind: "failed", error: "Action timed out" },
     });
 
     const exp = await t.run(async (ctx) => ctx.db.get(experimentId));
-    expect(exp!.status).toBe("completed_with_errors");
+    expect(exp!.status).toBe("failed");
+    expect(exp!.error).toBe("Action timed out");
+    expect(exp!.completedAt).toBeDefined();
   });
 
-  it("marks as canceled when canceling and all handled", async () => {
+  it("marks experiment as canceled when WorkPool item is canceled", async () => {
     const userId = await seedUser(t);
     const kbId = await seedKB(t, userId);
     const datasetId = await seedDataset(t, userId, kbId);
-    const questionId = await seedQuestion(t, datasetId, 1);
     const experimentId = await seedExperiment(t, userId, datasetId, {
       status: "canceling",
-      totalQuestions: 1,
     });
 
-    await t.mutation(internal.experiments.onQuestionEvaluated, {
+    await t.mutation(internal.experiments.onExperimentComplete, {
       workId: "w_fake",
-      context: { experimentId, questionId },
+      context: { experimentId },
       result: { kind: "canceled" },
     });
 
@@ -295,45 +169,24 @@ describe("experiments: onQuestionEvaluated", () => {
     expect(exp!.completedAt).toBeDefined();
   });
 
-  it("ignores callback if experiment is already canceled", async () => {
+  it("does not overwrite if experiment already marked failed by action", async () => {
     const userId = await seedUser(t);
     const kbId = await seedKB(t, userId);
     const datasetId = await seedDataset(t, userId, kbId);
-    const questionId = await seedQuestion(t, datasetId, 1);
     const experimentId = await seedExperiment(t, userId, datasetId, {
-      status: "canceled",
-      totalQuestions: 2,
+      status: "failed",
     });
 
-    await t.mutation(internal.experiments.onQuestionEvaluated, {
+    await t.mutation(internal.experiments.onExperimentComplete, {
       workId: "w_fake",
-      context: { experimentId, questionId },
-      result: { kind: "success", returnValue: {} },
+      context: { experimentId },
+      result: { kind: "failed", error: "Duplicate failure" },
     });
 
     const exp = await t.run(async (ctx) => ctx.db.get(experimentId));
-    expect(exp!.processedQuestions).toBe(0);
-  });
-
-  it("returns early when totalQuestions is 0 (S1)", async () => {
-    const userId = await seedUser(t);
-    const kbId = await seedKB(t, userId);
-    const datasetId = await seedDataset(t, userId, kbId);
-    const questionId = await seedQuestion(t, datasetId, 1);
-    const experimentId = await seedExperiment(t, userId, datasetId, {
-      totalQuestions: 0,
-    });
-
-    await t.mutation(internal.experiments.onQuestionEvaluated, {
-      workId: "w_fake",
-      context: { experimentId, questionId },
-      result: { kind: "success", returnValue: {} },
-    });
-
-    const exp = await t.run(async (ctx) => ctx.db.get(experimentId));
-    // Should remain unchanged
-    expect(exp!.processedQuestions).toBe(0);
-    expect(exp!.status).toBe("running");
+    // Should not overwrite — status was already "failed"
+    expect(exp!.status).toBe("failed");
+    expect(exp!.error).toBeUndefined(); // Original had no error set
   });
 });
 

@@ -13,13 +13,10 @@ import { Id } from "./_generated/dataModel";
 // ─── WorkPool Instance ───
 
 const pool = new Workpool(components.experimentPool, {
-  maxParallelism: 10,
-  retryActionsByDefault: true,
-  defaultRetryBehavior: {
-    maxAttempts: 5,
-    initialBackoffMs: 2000,
-    base: 2,
-  },
+  maxParallelism: 1,
+  // Retry is disabled: evaluate() processes the full dataset sequentially.
+  // If it times out, retrying from scratch won't help.
+  retryActionsByDefault: false,
 });
 
 // ─── Start Experiment ───
@@ -83,7 +80,7 @@ export const start = mutation({
       createdAt: Date.now(),
     });
 
-    // Schedule the orchestrator action (no separate jobs record)
+    // Schedule the orchestrator action
     await ctx.scheduler.runAfter(
       0,
       internal.experimentActions.runExperiment,
@@ -98,86 +95,48 @@ export const start = mutation({
   },
 });
 
-// ─── onComplete: onQuestionEvaluated ───
+// ─── onComplete: onExperimentComplete ───
 
-export const onQuestionEvaluated = internalMutation({
+/**
+ * Handles completion of the single evaluate() WorkPool item.
+ * On success: experiment should already be marked complete by the action.
+ * On failure: mark experiment as failed.
+ * On cancel: mark experiment as canceled.
+ */
+export const onExperimentComplete = internalMutation({
   args: vOnCompleteArgs(
     v.object({
       experimentId: v.id("experiments"),
-      questionId: v.id("questions"),
     }),
   ),
   handler: async (ctx, { context, result }: {
     workId: string;
-    context: { experimentId: Id<"experiments">; questionId: Id<"questions"> };
+    context: { experimentId: Id<"experiments"> };
     result: RunResult;
   }) => {
     const experiment = await ctx.db.get(context.experimentId);
     if (!experiment) return;
-    if (experiment.status === "canceled") return;
 
-    // I2/S3: Separate counters for success, failed, canceled (skipped)
-    const processedQuestions = (experiment.processedQuestions ?? 0) + (result.kind === "success" ? 1 : 0);
-    const failedQuestions = (experiment.failedQuestions ?? 0) + (result.kind === "failed" ? 1 : 0);
-    const skippedQuestions = (experiment.skippedQuestions ?? 0) + (result.kind === "canceled" ? 1 : 0);
+    if (result.kind === "success") {
+      // The action itself marks the experiment as completed with scores.
+      // Nothing more to do here.
+      return;
+    }
 
-    // S1: Guard against undefined totalQuestions
-    const totalQuestions = experiment.totalQuestions ?? 0;
-    if (totalQuestions === 0) return;
-
-    const totalHandled = processedQuestions + failedQuestions + skippedQuestions;
-    const isComplete = totalHandled >= totalQuestions;
-
-    if (isComplete) {
-      if (experiment.status === "canceling") {
-        await ctx.db.patch(context.experimentId, {
-          processedQuestions,
-          failedQuestions,
-          skippedQuestions,
-          status: "canceled",
-          completedAt: Date.now(),
-        });
-        return;
-      }
-
-      // Aggregate scores
-      const results = await ctx.db
-        .query("experimentResults")
-        .withIndex("by_experiment", (q) =>
-          q.eq("experimentId", context.experimentId),
-        )
-        .collect();
-
-      const metricNames = experiment.metricNames;
-      const avgScores: Record<string, number> = {};
-
-      for (const name of metricNames) {
-        const values = results
-          .map((r) => (r.scores as Record<string, number>)[name])
-          .filter((v): v is number => typeof v === "number");
-
-        avgScores[name] =
-          values.length > 0
-            ? values.reduce((a, b) => a + b, 0) / values.length
-            : 0;
-      }
-
-      const status = failedQuestions === 0 ? "completed" : "completed_with_errors";
-
+    if (result.kind === "canceled") {
       await ctx.db.patch(context.experimentId, {
-        processedQuestions,
-        failedQuestions,
-        skippedQuestions,
-        status,
-        scores: avgScores,
-        phase: "done",
+        status: "canceled",
         completedAt: Date.now(),
       });
-    } else {
+      return;
+    }
+
+    // result.kind === "failed"
+    if (experiment.status !== "failed") {
       await ctx.db.patch(context.experimentId, {
-        processedQuestions,
-        failedQuestions,
-        skippedQuestions,
+        status: "failed",
+        error: result.error ?? "Evaluation action failed",
+        completedAt: Date.now(),
       });
     }
   },
@@ -197,10 +156,8 @@ export const cancelExperiment = mutation({
       throw new Error(`Cannot cancel experiment in status: ${experiment.status}`);
     }
 
-    // I3: Set status first so callbacks see "canceling"
     await ctx.db.patch(args.experimentId, { status: "canceling" });
 
-    // C1: Cancel only this experiment's work items, not the entire pool
     const workIds = experiment.workIds ?? [];
     for (const wId of workIds) {
       await pool.cancel(ctx, wId as WorkId);
@@ -208,47 +165,40 @@ export const cancelExperiment = mutation({
   },
 });
 
-// ─── Enqueue Evaluations (must be in non-"use node" file) ───
+// ─── Enqueue Experiment (single WorkPool item) ───
 
-export const enqueueEvaluations = internalMutation({
+export const enqueueExperiment = internalMutation({
   args: {
     experimentId: v.id("experiments"),
+    datasetId: v.id("datasets"),
     kbId: v.id("knowledgeBases"),
     indexConfigHash: v.string(),
     embeddingModel: v.string(),
     k: v.number(),
-    langsmithExperimentId: v.optional(v.string()),
-    questionIds: v.array(v.id("questions")),
+    datasetName: v.string(),
   },
   handler: async (ctx, args) => {
-    // C1: Collect workIds for selective cancellation
-    const workIds: WorkId[] = [];
-    for (const questionId of args.questionIds) {
-      const wId = await pool.enqueueAction(
-        ctx,
-        internal.experimentActions.evaluateQuestion,
-        {
+    const wId = await pool.enqueueAction(
+      ctx,
+      internal.experimentActions.runEvaluation,
+      {
+        experimentId: args.experimentId,
+        datasetId: args.datasetId,
+        kbId: args.kbId,
+        indexConfigHash: args.indexConfigHash,
+        embeddingModel: args.embeddingModel,
+        k: args.k,
+        datasetName: args.datasetName,
+      },
+      {
+        context: {
           experimentId: args.experimentId,
-          questionId,
-          kbId: args.kbId,
-          indexConfigHash: args.indexConfigHash,
-          embeddingModel: args.embeddingModel,
-          k: args.k,
-          langsmithExperimentId: args.langsmithExperimentId,
         },
-        {
-          context: {
-            experimentId: args.experimentId,
-            questionId,
-          },
-          onComplete: internal.experiments.onQuestionEvaluated,
-        },
-      );
-      workIds.push(wId);
-    }
+        onComplete: internal.experiments.onExperimentComplete,
+      },
+    );
 
-    // Store workIds on experiment for selective cancellation
-    await ctx.db.patch(args.experimentId, { workIds: workIds as string[] });
+    await ctx.db.patch(args.experimentId, { workIds: [wId as string] });
   },
 });
 
@@ -271,6 +221,7 @@ export const updateStatus = internalMutation({
     error: v.optional(v.string()),
     phase: v.optional(v.string()),
     totalQuestions: v.optional(v.number()),
+    processedQuestions: v.optional(v.number()),
     langsmithExperimentId: v.optional(v.string()),
     langsmithUrl: v.optional(v.string()),
   },
@@ -280,6 +231,7 @@ export const updateStatus = internalMutation({
     if (args.error !== undefined) patch.error = args.error;
     if (args.phase !== undefined) patch.phase = args.phase;
     if (args.totalQuestions !== undefined) patch.totalQuestions = args.totalQuestions;
+    if (args.processedQuestions !== undefined) patch.processedQuestions = args.processedQuestions;
     if (args.langsmithExperimentId !== undefined) patch.langsmithExperimentId = args.langsmithExperimentId;
     if (args.langsmithUrl !== undefined) patch.langsmithUrl = args.langsmithUrl;
     await ctx.db.patch(args.experimentId, patch);
