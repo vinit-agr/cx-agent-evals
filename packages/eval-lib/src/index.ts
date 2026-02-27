@@ -42,7 +42,7 @@ export type { Embedder } from "./embedders/index.js";
 export { OpenAIEmbedder } from "./embedders/index.js";
 
 // Vector Store
-export type { VectorStore } from "./vector-stores/index.js";
+export type { VectorStore, VectorSearchResult } from "./vector-stores/index.js";
 // InMemoryVectorStore moved to "rag-evaluation-system/pipeline/internals"
 
 // Reranker

@@ -1,5 +1,5 @@
 import type { PositionAwareChunk } from "../types/index.js";
-import type { VectorStore } from "./vector-store.interface.js";
+import type { VectorStore, VectorSearchResult } from "./vector-store.interface.js";
 import { cosineSimilarity } from "../utils/similarity.js";
 
 export class InMemoryVectorStore implements VectorStore {
@@ -18,13 +18,13 @@ export class InMemoryVectorStore implements VectorStore {
   async search(
     queryEmbedding: readonly number[],
     k: number = 5,
-  ): Promise<PositionAwareChunk[]> {
+  ): Promise<VectorSearchResult[]> {
     const scored = this._chunks.map((chunk, i) => ({
       chunk,
       score: cosineSimilarity(queryEmbedding, this._embeddings[i]),
     }));
     scored.sort((a, b) => b.score - a.score);
-    return scored.slice(0, k).map((s) => s.chunk);
+    return scored.slice(0, k);
   }
 
   async clear(): Promise<void> {

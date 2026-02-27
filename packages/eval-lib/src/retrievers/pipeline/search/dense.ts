@@ -32,11 +32,10 @@ export class DenseSearchStrategy implements SearchStrategy {
     const { embedder, vectorStore } = deps;
 
     const queryEmbedding = await embedder.embedQuery(query);
-    const chunks = await vectorStore.search(queryEmbedding, k);
+    const results = await vectorStore.search(queryEmbedding, k);
 
-    // VectorStore returns chunks sorted by similarity but without scores.
-    // Assign linearly decaying scores for rank-based normalization.
-    return assignRankScores(chunks);
+    // VectorStore now returns real similarity scores — use them directly.
+    return results.map(({ chunk, score }) => ({ chunk, score }));
   }
 
   async cleanup(_deps: SearchStrategyDeps): Promise<void> {

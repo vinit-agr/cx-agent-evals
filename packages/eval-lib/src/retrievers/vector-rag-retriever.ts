@@ -58,7 +58,8 @@ export class VectorRAGRetriever implements Retriever {
     }
 
     const queryEmbedding = await this._embedder.embedQuery(query);
-    let retrievedChunks = await this._vectorStore.search(queryEmbedding, k);
+    const results = await this._vectorStore.search(queryEmbedding, k);
+    let retrievedChunks = results.map((r) => r.chunk);
 
     if (this._reranker) {
       retrievedChunks = await this._reranker.rerank(query, retrievedChunks, k);
