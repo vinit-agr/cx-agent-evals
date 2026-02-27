@@ -11,6 +11,13 @@ export class InMemoryVectorStore implements VectorStore {
     chunks: readonly PositionAwareChunk[],
     embeddings: readonly number[][],
   ): Promise<void> {
+    if (this._chunks.length > 0) {
+      console.warn(
+        `[InMemoryVectorStore] add() called while store already contains ${this._chunks.length} chunks — clearing existing state to avoid duplicates`,
+      );
+      this._chunks = [];
+      this._embeddings = [];
+    }
     this._chunks.push(...chunks);
     this._embeddings.push(...embeddings.map((e) => [...e]));
   }
