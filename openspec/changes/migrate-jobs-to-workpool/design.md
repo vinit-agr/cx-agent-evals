@@ -12,9 +12,9 @@ The indexing pattern is the simplest and most reliable. We unify all three onto 
 **Goals:**
 - All long-running operations follow the same pattern: tracking table → start mutation → enqueue → per-item action → onComplete → finalize
 - Delete custom job infrastructure: `jobs.ts`, `jobItems.ts`, `lib/batchProcessor.ts`, watchdog cron
-- Per-item parallelism and retry with exponential backoff for generation and experiments
-- Experiments scale to any dataset size (no 10-minute timeout for evaluation loop)
-- Maintain LangSmith integration for experiment results (using raw API instead of `evaluate()`)
+- Per-item parallelism and retry with exponential backoff for generation
+- Experiments run within WorkPool for tracking and cancellation, using LangSmith's `evaluate()` for full per-example UI fidelity (diffs, individual metrics, traces)
+- Maintain LangSmith integration for experiment results
 
 **Non-Goals:**
 - Changing the eval-lib strategy interfaces (SimpleStrategy, DimensionDrivenStrategy, etc.)
@@ -34,22 +34,24 @@ Question generation uses two sequential fan-outs through the same `generationPoo
 
 Alternative considered: pipeline approach (enqueue GT immediately per-doc as generation completes). Rejected for simplicity — counter tracking is complex when you don't know total GT items upfront, and the latency difference is negligible since WorkPool processes items in parallel within each phase.
 
-### D3: Per-question experiment evaluation with raw LangSmith API
-Replace `runLangSmithExperiment()` (which wraps LangSmith's `evaluate()`) with:
-1. A `createLangSmithExperiment()` helper that creates an experiment record via LangSmith client
-2. Per-question actions that evaluate and call `logLangSmithResult()` to log each result
+### D3: Single evaluate() call wrapped in WorkPool item
+Keep LangSmith's `evaluate()` API as the experiment execution engine, wrapped as a single WorkPool item with retry disabled. The `evaluate()` function handles the full per-example lifecycle (creating runs, linking to dataset examples, running evaluators, attaching feedback), which is required for LangSmith's per-example UI (diffs, individual metrics, traces).
 
-Alternative considered: keeping `evaluate()`. Rejected because it processes questions sequentially in a single action, risking 10-minute timeout for datasets with 100+ questions and preventing per-question retry.
+Initially, we replaced `evaluate()` with raw API calls (`createLangSmithExperiment` + per-question `logLangSmithResult`). However, testing revealed that LangSmith's per-example UI depends on internal metadata created by `evaluate()` that cannot be replicated via raw API or `traceable()` wrappers. Both approaches were attempted and failed to produce per-example views.
+
+The `evaluate()` call is wrapped in a single WorkPool item for consistent tracking and cancellation. Retry is disabled because `evaluate()` processes the full dataset sequentially — retrying after a 10-minute timeout restarts from scratch, which won't help. The `onResult` callback streams per-question results to Convex for real-time progress.
+
+Alternative considered: chunked `evaluate()` (split dataset, multiple WorkPool items each calling evaluate() on a subset, all writing to same project). Investigation confirmed this is technically feasible (SDK supports passing an existing project object and Example arrays), but adds complexity without clear benefit at current dataset sizes.
 
 ### D4: Experiment table as its own tracking record
 Add progress fields (`totalQuestions`, `processedQuestions`, `failedQuestions`) directly to the `experiments` table. No separate `jobs` record needed — the experiment IS the job. The orchestrator action updates the experiment record directly.
 
 ### D5: Orchestrator action for experiment setup
-Keep a single orchestrator action (`runExperiment`) that handles sequential setup, then fans out evaluation. Two paths:
+Keep a single orchestrator action (`runExperiment`) that handles sequential setup, then enqueues a single evaluation WorkPool item. Two paths:
 - **Retriever path** (primary): experiment references a pre-indexed retriever (`retrieverId`). Orchestrator verifies `status === "ready"`, reads `indexConfigHash` and `defaultK` directly. No indexing needed.
 - **Legacy path**: experiment has inline `retrieverConfig`. Orchestrator computes hash, triggers indexing, polls until complete.
 
-Both paths then: sync dataset to LangSmith → create LangSmith experiment via raw API → enqueue per-question evaluation items. The `evaluateQuestion` action reuses the same retrieval logic as `retrieverActions.retrieve` (embed → vector search → post-filter by indexConfigHash).
+Both paths then: sync dataset to LangSmith → enqueue a single `runEvaluation` action. The `runEvaluation` action creates a `CallbackRetriever` backed by Convex vector search and calls `runLangSmithExperiment()` (which internally calls LangSmith's `evaluate()`). The `onResult` callback streams per-question results to Convex. After `evaluate()` completes, the action aggregates scores and marks the experiment complete.
 
 ### D6: Generation job tracking via generationJobs table
 Mirror the `indexingJobs` pattern with a `generationJobs` table. Fields: orgId, datasetId, kbId, strategy, phase, status, progress counters (totalItems, processedItems, failedItems), error details, timestamps. The frontend queries this table directly for progress display.
@@ -78,7 +80,7 @@ Both `onQuestionGenerated` and `onGroundTruthAssigned` use the same counter upda
 ## Risks / Trade-offs
 
 - **[Phase transition race condition]** → The `onComplete` callback that triggers Phase 2 runs when the last Phase 1 item completes. Since `onComplete` is a mutation (atomic), the "check if all done → enqueue Phase 2" logic is safe. No race.
-- **[LangSmith raw API stability]** → Using raw `Client.createRun()` instead of `evaluate()` couples us to LangSmith's lower-level API. Mitigation: the helpers are thin wrappers, easy to update if API changes.
+- **[Experiment evaluation timeout]** → The `runEvaluation` action runs `evaluate()` on the full dataset sequentially. For large datasets (100+ questions), this risks the 10-minute Convex action timeout. Retry is disabled because restarting from scratch won't help. Mitigation: monitor dataset sizes; if timeouts occur, consider chunked `evaluate()` approach (D3 alternative).
 - **[Experiment orchestrator timeout]** → The orchestrator action polls indexing completion (could take minutes). If indexing takes >10 minutes, the orchestrator action times out. Mitigation: same pattern as today; indexing is already WorkPool-based so it runs independently. If orchestrator times out, WorkPool retry restarts it, and indexing dedup check returns `alreadyCompleted`.
 - **[Breaking change for frontend]** → Frontend references `jobs` queries for progress. Must update to use `generationJobs` queries and `experiments` fields instead.
 

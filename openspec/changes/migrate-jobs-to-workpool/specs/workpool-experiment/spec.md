@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Experiment WorkPool instance
-The system SHALL create a `Workpool` instance backed by `components.experimentPool` with `maxParallelism: 10`, `retryActionsByDefault: true`, and `defaultRetryBehavior: { maxAttempts: 5, initialBackoffMs: 2000, base: 2 }`.
+The system SHALL create a `Workpool` instance backed by `components.experimentPool` with `maxParallelism: 1` and `retryActionsByDefault: false`. Retry is disabled because `evaluate()` processes the full dataset sequentially — retrying after a timeout restarts from scratch. Parallelism is 1 because the single WorkPool item runs the entire evaluation.
 
 #### Scenario: Pool is available
 - **WHEN** the Convex backend is deployed
@@ -30,20 +30,19 @@ The system SHALL provide an `experiments.start` mutation that creates an `experi
 - **THEN** the system SHALL create an experiment record and schedule the orchestrator action
 
 ### Requirement: Orchestrator action
-The system SHALL provide a `runExperiment` orchestrator action that performs sequential setup, then fans out per-question evaluation. The orchestrator SHALL support two paths:
+The system SHALL provide a `runExperiment` orchestrator action that performs sequential setup, then enqueues a single evaluation WorkPool item. The orchestrator SHALL support two paths:
 
 **Retriever path** (when `experiment.retrieverId` is set):
 1. Load retriever record and verify `status === "ready"`
 2. Use retriever's `indexConfigHash` and `defaultK` directly — skip indexing entirely
 3. Sync dataset to LangSmith if not already synced
-4. Create a LangSmith experiment via raw API (`createLangSmithExperiment`)
-5. Update experiment status to `"running"` with `totalQuestions` set
-6. Enqueue one `evaluateQuestion` action per question into `experimentPool` with `onComplete: onQuestionEvaluated`
+4. Update experiment status to `"running"` with `totalQuestions` set
+5. Enqueue a single `runEvaluation` action into `experimentPool` with `onComplete: onExperimentComplete`
 
 **Legacy path** (when `experiment.retrieverConfig` is set):
 1. Compute `indexConfigHash` from inline config
 2. Trigger KB indexing via `indexing.startIndexing` and poll until complete
-3. Continue with steps 3-6 from retriever path above
+3. Continue with steps 3-5 from retriever path above
 
 The orchestrator SHALL update the experiment's `status` and `phase` fields at each step for progress visibility.
 
@@ -55,58 +54,53 @@ The orchestrator SHALL update the experiment's `status` and `phase` fields at ea
 - **WHEN** the experiment uses inline `retrieverConfig` and KB is not yet indexed
 - **THEN** the orchestrator SHALL trigger indexing and poll until complete before proceeding
 
-#### Scenario: Orchestrator sets up and fans out
+#### Scenario: Orchestrator enqueues evaluation
 - **WHEN** setup completes for a dataset with 50 questions
-- **THEN** the orchestrator SHALL enqueue 50 evaluation actions and return
+- **THEN** the orchestrator SHALL enqueue a single `runEvaluation` action and return
 
 #### Scenario: Orchestrator fails during setup
-- **WHEN** dataset sync or LangSmith experiment creation fails
+- **WHEN** dataset sync fails
 - **THEN** the experiment status SHALL be set to `"failed"` with the error message
 
 #### Scenario: Empty dataset
 - **WHEN** the dataset has zero questions
 - **THEN** the orchestrator SHALL mark the experiment as `"completed"` with `totalQuestions: 0` and phase `"done"` without enqueueing any evaluation actions
 
-### Requirement: Per-question evaluation action
-The system SHALL provide an `evaluateQuestion` action that:
-1. Loads the question and its ground truth spans
-2. Retrieves chunks using the same retrieval logic as `retrieverActions.retrieve` (embed query → vector search filtered by kbId → post-filter by indexConfigHash → take top-K)
-3. Computes metrics (recall, precision, IoU, F1) by comparing retrieved spans to ground truth
-4. Inserts an `experimentResults` record
-5. Logs the result to LangSmith via `logLangSmithResult`, passing the question's `langsmithExampleId` (if available) for proper experiment-to-dataset correlation
-6. Returns `{ scores: Record<string, number> }`
+### Requirement: Single evaluation action (runEvaluation)
+The system SHALL provide a `runEvaluation` action that wraps LangSmith's `evaluate()` function as a single WorkPool item. It SHALL:
+1. Load experiment config and all KB documents to build a corpus
+2. Create a `CallbackRetriever` backed by Convex vector search (embed query → vector search filtered by kbId → post-filter by indexConfigHash → take top-K)
+3. Call `runLangSmithExperiment()` which internally uses LangSmith's `evaluate()` API — this handles creating the experiment, running the target per example, computing metrics via evaluator adapters, and creating properly linked runs
+4. The `onResult` callback SHALL write per-question results to `experimentResults` and update `processedQuestions` on the experiment for real-time progress
+5. After `evaluate()` completes, aggregate average scores per metric and mark the experiment as `"completed"` (or `"completed_with_errors"`)
 
-The retrieval logic SHALL use the `kbId` and `indexConfigHash` from the experiment's associated retriever (or computed from legacy config).
+LangSmith's `evaluate()` is used (instead of raw API) because it produces the full per-example UI in LangSmith (diffs, individual metrics, traces) that cannot be replicated via raw API calls.
 
-#### Scenario: Question evaluated successfully
-- **WHEN** the action runs for a question with ground truth
-- **THEN** it SHALL retrieve chunks, compute metrics, store the result, and log to LangSmith
+#### Scenario: Evaluation completes successfully
+- **WHEN** the action runs for a dataset with 50 questions
+- **THEN** it SHALL call evaluate() on the full dataset, stream per-question results to Convex via onResult, aggregate scores, and mark the experiment complete
 
-#### Scenario: Question with empty ground truth
-- **WHEN** the action runs for a question with no ground truth spans
-- **THEN** it SHALL still retrieve chunks and compute metrics (which will be 0 for recall/precision)
+#### Scenario: Per-question progress updates
+- **WHEN** evaluate() processes each question
+- **THEN** the onResult callback SHALL increment `processedQuestions` on the experiment for real-time UI progress
 
-### Requirement: Experiment completion callback (onQuestionEvaluated)
-The system SHALL provide an `onQuestionEvaluated` mutation as the WorkPool `onComplete` callback. It SHALL increment `processedQuestions` (on success), `failedQuestions` (on failure), or `skippedQuestions` (on canceled) on the experiment record. If `totalQuestions` is 0 or undefined, the callback SHALL return early without processing. When all questions are handled (processedQuestions + failedQuestions + skippedQuestions >= totalQuestions), it SHALL:
-1. Query all `experimentResults` for the experiment
-2. Compute average scores per metric
-3. Update experiment with `scores`, `status: "completed"` (or `"completed_with_errors"`), `skippedQuestions`, and `completedAt`
+### Requirement: Experiment completion callback (onExperimentComplete)
+The system SHALL provide an `onExperimentComplete` mutation as the WorkPool `onComplete` callback for the single evaluation item. Since there is only one WorkPool item per experiment:
+- On `success`: the action itself has already marked the experiment as completed with aggregated scores. The callback SHALL be a no-op.
+- On `failed`: the callback SHALL mark the experiment as `"failed"` with the error message (if not already marked failed by the action's error handling).
+- On `canceled`: the callback SHALL mark the experiment as `"canceled"`.
 
-#### Scenario: All questions evaluated
-- **WHEN** the last question evaluation completes (50/50)
-- **THEN** the callback SHALL aggregate scores and mark the experiment complete
+#### Scenario: Evaluation succeeds
+- **WHEN** the single evaluation action completes successfully
+- **THEN** the callback SHALL do nothing (action already finalized the experiment)
 
-#### Scenario: Some evaluations failed
-- **WHEN** 48/50 succeed and 2/50 fail
-- **THEN** the experiment SHALL be marked `"completed_with_errors"` with scores averaged over the 48 successful results
+#### Scenario: Evaluation fails (timeout or error)
+- **WHEN** the evaluation action fails
+- **THEN** the callback SHALL mark the experiment as `"failed"` with error details
 
-#### Scenario: Canceled items tracked as skipped
-- **WHEN** a work item result has `kind: "canceled"`
-- **THEN** it SHALL increment `skippedQuestions`, NOT `failedQuestions`
-
-#### Scenario: Zero totalQuestions guard
-- **WHEN** the callback fires but `totalQuestions` is 0 or undefined
-- **THEN** the callback SHALL return early without modifying the experiment
+#### Scenario: Evaluation canceled
+- **WHEN** the evaluation action is canceled via WorkPool
+- **THEN** the callback SHALL mark the experiment as `"canceled"`
 
 ### Requirement: Cancel experiment
 The system SHALL provide a `cancelExperiment` mutation that first sets status to `"canceling"` (so in-flight callbacks see the updated status), then iterates over the experiment's stored `workIds` and calls `pool.cancel(ctx, workId)` for each one. This provides selective cancellation — only this experiment's items are canceled, not other experiments sharing the same pool. The experiment SHALL transition to `"canceled"` when all items finish (via the onComplete callbacks).

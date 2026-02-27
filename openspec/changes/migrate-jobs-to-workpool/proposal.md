@@ -7,17 +7,16 @@ The backend uses two different job execution architectures: a custom `jobs`/`job
 - Register two new WorkPool instances (`generationPool`, `experimentPool`) alongside existing `indexingPool`
 - **BREAKING**: Replace `jobs` and `jobItems` tables with a dedicated `generationJobs` table (mirrors `indexingJobs` pattern)
 - Rewrite question generation as a two-phase WorkPool flow: Phase 1 fans out generation actions, Phase 2 fans out ground truth assignment actions
-- Rewrite experiment execution to fan out per-question evaluation via `experimentPool`, with an orchestrator action for setup (indexing + LangSmith sync)
+- Rewrite experiment execution to run LangSmith's `evaluate()` as a single WorkPool item (no retry), with an orchestrator action for setup (indexing + LangSmith sync)
 - Add progress tracking fields directly on the `experiments` table (no separate job record)
-- Replace LangSmith's `evaluate()` API with raw LangSmith API calls (`createLangSmithExperiment`, `logLangSmithResult`) to enable per-question parallelism
 - **BREAKING**: Delete `jobs.ts`, `jobItems.ts`, `lib/batchProcessor.ts`, and watchdog/cron logic
 
 ## Capabilities
 
 ### New Capabilities
 - `workpool-generation`: WorkPool-based question generation with two-phase fan-out (generate → ground truth)
-- `workpool-experiment`: WorkPool-based experiment execution with per-question parallelism and raw LangSmith API integration
-- `langsmith-raw-api`: Raw LangSmith API helpers for creating experiments and logging results without using `evaluate()`
+- `workpool-experiment`: WorkPool-based experiment execution wrapping LangSmith's `evaluate()` as a single item for tracking and cancellation
+- `langsmith-raw-api`: Raw LangSmith API helpers for creating experiments and logging results (available in eval-lib for standalone use)
 
 ### Modified Capabilities
 - `kb-indexing-workpool-config`: Adding `generationPool` and `experimentPool` to the same WorkPool component configuration

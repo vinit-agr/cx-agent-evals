@@ -20,9 +20,9 @@
 ## 3. Experiment Runner — WorkPool Migration
 
 - [x] 3.1 Update `experiments.start` mutation — remove job record creation, just create experiment and schedule orchestrator
-- [x] 3.2 Rewrite `runExperiment` orchestrator action — setup phases (indexing, sync, create LangSmith experiment), then enqueue per-question evaluation into experimentPool
-- [x] 3.3 Create `evaluateQuestion` action — embed query, vector search, compute metrics, insert experimentResult, log to LangSmith raw API
-- [x] 3.4 Create `onQuestionEvaluated` onComplete callback mutation — increment experiment progress counters, detect completion, aggregate scores, mark complete
+- [x] 3.2 Rewrite `runExperiment` orchestrator action — setup phases (indexing, sync), then enqueue single `runEvaluation` WorkPool item
+- [x] 3.3 Create `runEvaluation` action — wraps `runLangSmithExperiment()` with CallbackRetriever backed by Convex vector search, onResult callback writes per-question results, aggregates scores on completion
+- [x] 3.4 Create `onExperimentComplete` onComplete callback mutation — handles single item: no-op on success (action finalizes), marks failed/canceled
 - [x] 3.5 Create `cancelExperiment` mutation — set status to "canceling", cancel per-item via stored workIds
 - [x] 3.6 Update experiment queries to include new progress fields
 
@@ -68,8 +68,8 @@
 
 - [x] 8.1 Run `pnpm -C packages/eval-lib test` — verify eval-lib tests pass (205 pass, 3 pre-existing dimension failures)
 - [x] 8.2 Write backend tests: `generation.test.ts` — 14 tests covering onQuestionGenerated, onGroundTruthAssigned, getJob (counter logic, phase transitions, phase1Stats, cancellation, auth scoping)
-- [x] 8.3 Write backend tests: `experiments.test.ts` — 10 tests covering onQuestionEvaluated, get query (counter logic, score aggregation, skipped vs failed, zero-totalQuestions guard, cancellation, null return)
-- [x] 8.4 Run `pnpm -C packages/backend test` — 24 tests pass
+- [x] 8.3 Write backend tests: `experiments.test.ts` — 6 tests covering onExperimentComplete (success no-op, failure, cancellation, no-overwrite), get query (null for wrong org, correct org)
+- [x] 8.4 Run `pnpm -C packages/backend test` — 20 tests pass (14 generation + 6 experiments)
 - [x] 8.5 Deploy to dev (`pnpm dev:backend`) and verify schema applies cleanly
 - [x] 8.6 End-to-end test: simple strategy question generation with GT assignment
 - [x] 8.7 End-to-end test: experiment run with per-question evaluation and LangSmith sync
