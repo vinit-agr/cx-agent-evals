@@ -57,10 +57,14 @@ export class GroundTruthAssigner implements GroundTruthAssignerInterface<GroundT
   private async _extractExcerpts(
     docContent: string,
     question: string,
-    _docId: string,
+    docId: string,
     context: GroundTruthAssignerContext,
   ): Promise<string[]> {
-    const prompt = `Document:\n${docContent.substring(0, 8000)}\n\nQuestion: ${question}\n\nExtract exact passages.`;
+    const maxChars = context.maxDocumentChars ?? 8000;
+    if (docContent.length > maxChars) {
+      console.warn(`Document "${docId}" truncated from ${docContent.length} to ${maxChars} chars`);
+    }
+    const prompt = `Document:\n${docContent.substring(0, maxChars)}\n\nQuestion: ${question}\n\nExtract exact passages.`;
     const response = await context.llmClient.complete({
       model: context.model,
       messages: [

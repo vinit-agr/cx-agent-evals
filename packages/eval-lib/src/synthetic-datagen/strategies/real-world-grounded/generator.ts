@@ -115,6 +115,7 @@ export class RealWorldGroundedStrategy implements QuestionStrategy {
           count,
           context.llmClient,
           context.model,
+          { maxDocumentChars: this._options.maxDocumentChars, docId },
         );
 
         for (const q of generated) {

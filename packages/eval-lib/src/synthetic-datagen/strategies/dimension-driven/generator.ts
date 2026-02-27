@@ -109,7 +109,11 @@ export class DimensionDrivenStrategy implements QuestionStrategy {
         return `[${i}] ${profileDesc}`;
       });
 
-      const prompt = `Document content:\n${doc.content.substring(0, 6000)}\n\nUser profiles (generate one question per profile):\n${profiles.join("\n")}`;
+      const maxChars = this._options.maxDocumentChars ?? 6000;
+      if (doc.content.length > maxChars) {
+        console.warn(`Document "${docId}" truncated from ${doc.content.length} to ${maxChars} chars`);
+      }
+      const prompt = `Document content:\n${doc.content.substring(0, maxChars)}\n\nUser profiles (generate one question per profile):\n${profiles.join("\n")}`;
 
       const response = await context.llmClient.complete({
         model: context.model,
