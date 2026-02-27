@@ -12,14 +12,6 @@ import { cosineSimilarity } from "../../../utils/similarity.js";
 const PASSAGE_MAX_LENGTH = 500;
 
 /**
- * Minimum character gap between consecutive paragraphs before they are
- * split into separate passages.  When the accumulated text plus the next
- * paragraph would exceed {@link PASSAGE_MAX_LENGTH}, a new passage begins.
- * This constant is currently unused but reserved for future merge logic.
- */
-const PASSAGE_MERGE_THRESHOLD = 100;
-
-/**
  * Number of texts to embed in a single call to the embedder.
  * Increase for throughput (if your API rate-limit allows); decrease to
  * avoid request-size limits or to reduce memory pressure.
