@@ -1,3 +1,5 @@
+import { withRetry } from "../utils/retry.js";
+
 export interface LLMClient {
   readonly name: string;
   complete(params: {
@@ -23,13 +25,17 @@ export function openAIClientAdapter(client: {
   return {
     name: "OpenAI",
     async complete(params) {
-      const response = await client.chat.completions.create({
-        model: params.model,
-        messages: [...params.messages],
-        ...(params.responseFormat === "json"
-          ? { response_format: { type: "json_object" } }
-          : {}),
-      });
+      const response = await withRetry(
+        () =>
+          client.chat.completions.create({
+            model: params.model,
+            messages: [...params.messages],
+            ...(params.responseFormat === "json"
+              ? { response_format: { type: "json_object" } }
+              : {}),
+          }),
+        { maxRetries: 3, backoffMs: 1000 },
+      );
       return response.choices[0].message.content ?? "";
     },
   };
