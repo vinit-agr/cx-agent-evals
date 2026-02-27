@@ -1,3 +1,4 @@
+export { mapWithConcurrency } from "./concurrency.js";
 export { generatePaChunkId } from "./hashing.js";
 export { safeParseLLMResponse } from "./json.js";
 export { cosineSimilarity } from "./similarity.js";

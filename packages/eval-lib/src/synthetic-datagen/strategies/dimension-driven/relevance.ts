@@ -2,6 +2,7 @@ import type { Corpus } from "../../../types/index.js";
 import type { LLMClient } from "../../base.js";
 import type { DimensionCombo, DocComboAssignment, RelevanceMatrix } from "../types.js";
 import { safeParseLLMResponse } from "../../../utils/json.js";
+import { mapWithConcurrency } from "../../../utils/concurrency.js";
 
 const SUMMARY_PROMPT = `Summarize this document in one line: its topic, target audience, and purpose. Be specific and concise.
 
@@ -43,8 +44,9 @@ async function summarizeDocuments(
   llmClient: LLMClient,
   model: string,
 ): Promise<ReadonlyMap<string, string>> {
-  const results = await Promise.all(
-    corpus.documents.map(async (doc) => {
+  const results = await mapWithConcurrency(
+    corpus.documents,
+    async (doc) => {
       const content = doc.content.substring(0, 3000);
       const response = await llmClient.complete({
         model,
@@ -56,7 +58,8 @@ async function summarizeDocuments(
       });
       const data = safeParseLLMResponse(response, { summary: "" });
       return [String(doc.id), data.summary ?? ""] as const;
-    }),
+    },
+    5,
   );
 
   return new Map(results);
@@ -79,8 +82,9 @@ async function assignCombosToDocuments(
     batches.push({ offset, batchCombos: combos.slice(offset, offset + BATCH_SIZE) });
   }
 
-  const batchResults = await Promise.all(
-    batches.map(async ({ offset, batchCombos }) => {
+  const batchResults = await mapWithConcurrency(
+    batches,
+    async ({ offset, batchCombos }) => {
       const batchList = batchCombos
         .map((combo, i) => {
           const desc = Object.entries(combo)
@@ -115,7 +119,8 @@ async function assignCombosToDocuments(
         }
       }
       return results;
-    }),
+    },
+    5,
   );
 
   return batchResults.flat();
