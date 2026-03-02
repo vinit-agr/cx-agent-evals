@@ -63,7 +63,7 @@ All 26 source files sit flat in `convex/`. Here's how they group logically:
 | `retrievers.ts` | Retriever CRUD, status sync, index management | mutation / query / internalMutation / internalQuery |
 | `retrieverActions.ts` | Retriever creation (hash computation), indexing trigger, standalone retrieve | `"use node"` action |
 | `experiments.ts` | Experiment start, WorkPool enqueue, cancel, onComplete, queries | mutation / query / internalMutation / internalQuery |
-| `experimentActions.ts` | Experiment orchestrator, LangSmith evaluate() runner | `"use node"` internalAction |
+| `experimentActions.ts` | Experiment orchestrator, LangSmith evaluate() runner (inlined from eval-lib) | `"use node"` internalAction |
 | `experimentResults.ts` | Per-question result storage and queries | query / internalMutation / internalQuery |
 
 ### Data Layer (CRUD)
@@ -80,9 +80,11 @@ All 26 source files sit flat in `convex/`. Here's how they group logically:
 
 ### LangSmith Integration
 
+> **Note:** LangSmith integration code previously lived in eval-lib under `src/langsmith/`. It has been fully migrated to the Convex backend. The `uploadDataset()` function is inlined in `langsmithSync.ts`, and `runLangSmithExperiment()` is inlined in `experimentActions.ts`. eval-lib is now a pure evaluation library with zero LangSmith dependency.
+
 | File | Role |
 |------|------|
-| `langsmithSync.ts` | Dataset sync to LangSmith (upload + example ID linking) |
+| `langsmithSync.ts` | Dataset sync to LangSmith (inlined `uploadDataset()` + example ID linking) |
 | `langsmithRetry.ts` | Manual retry mutation for failed syncs |
 | `langsmithSyncRetry.ts` | Cron-driven auto-retry (finds failed syncs, re-schedules) |
 | `crons.ts` | Hourly cron job for LangSmith retry |
@@ -253,7 +255,7 @@ Hash computation requires Node.js `crypto` module, so it happens in actions, not
        Step 4: Enqueue evaluation
      → experimentActions.runEvaluation
        → CallbackRetriever + vectorSearch
-       → runLangSmithExperiment (evaluate())
+       → runLangSmithExperiment (inlined, calls evaluate())
        → onResult → experimentResults.insert
        → aggregate scores → mark complete
 ```
@@ -264,11 +266,12 @@ Hash computation requires Node.js `crypto` module, so it happens in actions, not
 
 | Dependency | Used For | Where |
 |------------|----------|-------|
-| `rag-evaluation-system` | Chunkers, embedders, strategies, metrics, types, LangSmith utilities | generationActions, experimentActions, indexingActions, retrieverActions, ragActions, langsmithSync |
+| `rag-evaluation-system` | Chunkers, embedders, strategies, metrics, types, config hashing | generationActions, experimentActions, indexingActions, retrieverActions, ragActions, langsmithSync, lib/llm.ts |
 | `openai` | OpenAI API client (embeddings, LLM) | lib/llm.ts, generationActions, indexingActions, retrieverActions, experimentActions |
-| `langsmith` + `@langchain/core` | LangSmith SDK (dataset upload, evaluate()) | langsmithSync, experimentActions |
+| `langsmith` + `@langchain/core` | LangSmith SDK (dataset upload, evaluate()) — used directly by backend (no longer via eval-lib) | langsmithSync, experimentActions |
 | `@convex-dev/workpool` | Async work dispatch with retry/cancel | generation, indexing, experiments |
-| `minisearch` | Listed in dependencies but not currently imported in any backend file | (unused) |
+
+> **Note:** eval-lib no longer depends on or exports LangSmith utilities. The backend imports `langsmith` and `@langchain/core` directly. eval-lib provides only pure evaluation types, strategies, metrics, chunkers, embedders, and config hashing.
 
 ---
 

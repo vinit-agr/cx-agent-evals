@@ -83,7 +83,7 @@ Generation is a **two-phase WorkPool pipeline**:
 
 ## Strategies
 
-Three question generation strategies are supported, all delegating to `rag-evaluation-system`:
+Three question generation strategies are supported, all delegating to `rag-evaluation-system`. Each strategy implements the `QuestionStrategy` interface directly (the previous `SyntheticDatasetGenerator` abstract class has been removed from eval-lib):
 
 ### 1. Simple Strategy (`simple`)
 
@@ -221,7 +221,9 @@ await ctx.scheduler.runAfter(0, internal.langsmithSync.syncDataset, {
 });
 ```
 
-This converts questions to `GroundTruth[]` format and uploads to LangSmith. If sync fails, the hourly cron (`langsmithSyncRetry.retryFailed`) will retry automatically.
+This converts questions to `GroundTruth[]` format and uploads to LangSmith. The `uploadDataset()` function is inlined in `langsmithSync.ts` (migrated from eval-lib's former `src/langsmith/upload.ts`). It uses branded types (`QueryId`, `QueryText`, `DocumentId`) from eval-lib and the `langsmith` SDK directly. If sync fails, the hourly cron (`langsmithSyncRetry.retryFailed`) will retry automatically.
+
+> **Note:** The previous `uploadToLangsmith` and `datasetName` options that existed on eval-lib's `GenerateOptions` have been removed. LangSmith dataset upload is now handled entirely by the Convex backend via `langsmithSync.syncDataset`.
 
 ---
 

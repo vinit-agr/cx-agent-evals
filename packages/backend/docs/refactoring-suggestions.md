@@ -13,7 +13,7 @@
 3. [Code Duplication](#3-code-duplication)
 4. [Type Safety Improvements](#4-type-safety-improvements)
 5. [Naming & Readability](#5-naming--readability)
-6. [Unused Dependencies](#6-unused-dependencies)
+6. [Unused Dependencies & Import Cleanup](#6-unused-dependencies--import-cleanup)
 7. [Schema & Validator Improvements](#7-schema--validator-improvements)
 8. [Architectural Refinements](#8-architectural-refinements)
 9. [Testing](#9-testing)
@@ -77,9 +77,15 @@ convex/
 ├── lib/                             # Shared infrastructure
 │   ├── auth.ts                      # (existing)
 │   ├── llm.ts                       # (existing)
+│   ├── embedder.ts                  # NEW: shared createEmbedder() helper
 │   ├── workpool.ts                  # NEW: shared WorkPool counter/status helpers
 │   ├── validators.ts                # NEW: shared validators (spanValidator)
-│   └── types.ts                     # NEW: shared type definitions (JobStatus)
+│   ├── types.ts                     # NEW: shared type definitions (JobStatus)
+│   └── langsmith/                   # NEW: LangSmith SDK integration (migrated from eval-lib)
+│       ├── client.ts                # LangSmith client factory
+│       ├── experiment.ts            # runLangSmithExperiment(), evaluator helpers
+│       ├── upload.ts                # uploadDataset(), UploadOptions, UploadResult
+│       └── index.ts                 # Barrel export
 │
 ├── generation/                      # Generation module
 │   ├── orchestration.ts             # startGeneration, callbacks, cancel, queries
@@ -299,7 +305,7 @@ These are useful during development but become cryptic over time. **Suggestion**
 
 ---
 
-## 6. Unused Dependencies
+## 6. Unused Dependencies & Import Cleanup
 
 ### `minisearch`
 
@@ -311,6 +317,22 @@ grep -r "minisearch" packages/backend/ --include="*.ts"
 ```
 
 **Action**: Remove from both `package.json` and `convex.json`.
+
+### eval-lib LangSmith Exports (Removed)
+
+eval-lib no longer exports any LangSmith utilities. The `src/langsmith/` directory has been completely removed from eval-lib, and there is no `./langsmith/*` sub-path export. All LangSmith code is now inlined in the backend:
+- `uploadDataset()` — inlined in `langsmithSync.ts`
+- `runLangSmithExperiment()` — inlined in `experimentActions.ts`
+
+If any import paths reference `rag-evaluation-system/langsmith/*`, they must be removed. The backend now imports `langsmith` and `@langchain/core` directly.
+
+### eval-lib Import Surface
+
+The backend should only import from these eval-lib sub-paths:
+- `rag-evaluation-system` (main barrel) — types, strategies, metrics, chunkers, config hashing, `CallbackRetriever`, `openAIClientAdapter`
+- `rag-evaluation-system/embedders/openai` — `OpenAIEmbedder` (tree-shakeable, avoids pulling `openai` into main bundle)
+
+Other available sub-paths (`./pipeline/internals`, `./utils`, `./rerankers/cohere`) are not currently used by the backend.
 
 ---
 
@@ -433,6 +455,33 @@ For production scale, add an index on `langsmithSyncStatus` or use a dedicated "
 
 This file has an `import { internalAction }` at the top and then a second `import { internalQuery }` on line 30. While this works, it's unusual to have two import blocks from the same module. Reorganize to have a single import block.
 
+### 8.5 Inlined LangSmith Code Should Be Extracted to `lib/`
+
+After the eval-lib refactor, LangSmith integration code that previously lived in eval-lib's `src/langsmith/` was inlined directly into backend action files:
+
+- `experimentActions.ts` contains the full `runLangSmithExperiment()` function and helper interfaces (`ExperimentResult`, `SerializedSpan`, `createLangSmithEvaluator`, `createLangSmithEvaluators`)
+- `langsmithSync.ts` contains the full `uploadDataset()` function and helper interfaces (`UploadProgress`, `UploadOptions`, `UploadResult`)
+
+This inlining makes these files larger and harder to maintain. The LangSmith logic is conceptually separate from the Convex action orchestration.
+
+**Fix**: Extract the inlined LangSmith helpers to `lib/langsmith/`:
+
+```
+lib/langsmith/
+├── client.ts          # LangSmith client factory (existing lib/langsmith.ts)
+├── experiment.ts      # runLangSmithExperiment(), evaluator helpers
+├── upload.ts          # uploadDataset(), UploadOptions, UploadResult
+└── index.ts           # Barrel export
+```
+
+This would:
+- Reduce `experimentActions.ts` and `langsmithSync.ts` to pure Convex orchestration
+- Make the LangSmith integration testable independently
+- Align with the existing `lib/` pattern (`lib/auth.ts`, `lib/llm.ts`)
+- Create a clear boundary: "everything in `lib/langsmith/` is LangSmith SDK code, everything else is Convex code"
+
+> **Note**: Since these are `"use node"` files, the extracted helpers must also be in files that are compatible with the Node.js runtime. They can live in `lib/` since they're only imported by action files.
+
 ---
 
 ## 9. Testing
@@ -517,6 +566,7 @@ These can be done in a single session with confidence:
 - [ ] Remove `rag.insertChunk` and `rag.deleteKbChunks` (deprecated)
 - [ ] Remove `minisearch` from `package.json` and `convex.json`
 - [ ] Remove `MAX_AUTO_RETRIES` unused constant
+- [ ] Verify no remaining imports from `rag-evaluation-system/langsmith/*` (removed sub-path)
 - [ ] Fix dangling docstrings in `datasets.ts` and `questions.ts`
 - [ ] Extract `spanValidator` to `lib/validators.ts`
 - [ ] Extract `createEmbedder` to `lib/embedder.ts`
@@ -542,6 +592,7 @@ These can be done in a single session with confidence:
 ### Phase 4: Structural (Higher Risk, Plan Carefully)
 
 - [ ] Fix `indexing.cancelIndexing` to use selective cancel (not `cancelAll`)
+- [ ] Extract inlined LangSmith code to `lib/langsmith/` (see [8.5](#85-inlined-langsmith-code-should-be-extracted-to-lib))
 - [ ] Reorganize files into module subdirectories (or adopt prefix convention)
 - [ ] Remove legacy experiment path (`retrieverConfig` without `retrieverId`)
 - [ ] Clean up unused experiment schema fields or populate them

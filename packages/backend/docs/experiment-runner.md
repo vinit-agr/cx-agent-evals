@@ -15,7 +15,7 @@
 | `experimentResults.ts` | ~65 | Per-question result storage and queries |
 
 Supporting files touched:
-- `langsmithSync.ts` — dataset sync before evaluation
+- `langsmithSync.ts` — dataset sync before evaluation (inlined `uploadDataset()` from former eval-lib)
 - `indexing.ts` — indexing check/trigger during orchestration
 - `rag.ts` — chunk hydration after vector search
 - `retrievers.ts` — retriever config lookup
@@ -168,6 +168,8 @@ This design keeps Convex-specific code (vector search, hydration) in the backend
 
 ## LangSmith Integration
 
+> **Note:** LangSmith integration code previously lived in eval-lib under `src/langsmith/`. It has been fully migrated to the Convex backend. The `runLangSmithExperiment()` function is inlined in `experimentActions.ts`, and `uploadDataset()` is inlined in `langsmithSync.ts`. eval-lib is now a pure evaluation library with zero LangSmith dependency.
+
 ### Dataset Sync
 
 Before evaluation can run, the dataset must exist in LangSmith:
@@ -176,19 +178,31 @@ Before evaluation can run, the dataset must exist in LangSmith:
 datasets table.langsmithDatasetId exists?
   ├── Yes → use it
   └── No → call langsmithSync.syncDataset
-           → uploadDataset(groundTruth, { datasetName, ... })
+           → uploadDataset() (inlined in langsmithSync.ts)
            → link example IDs back to questions
 ```
 
+The `uploadDataset()` function (previously in eval-lib's `src/langsmith/upload.ts`) is now inlined in `langsmithSync.ts`. It converts questions to `GroundTruth[]` format using branded types (`QueryId`, `QueryText`, `DocumentId`) from eval-lib, then uploads to LangSmith using the `langsmith` SDK directly.
+
 ### Experiment Execution
 
-`runLangSmithExperiment()` (from `rag-evaluation-system/langsmith/experiment-runner`) wraps LangSmith's native `evaluate()` function:
+`runLangSmithExperiment()` is defined locally in `experimentActions.ts` (inlined from eval-lib's former `src/langsmith/experiment-runner.ts`). It wraps LangSmith's native `evaluate()` function:
 
-- Creates a LangSmith experiment linked to the dataset
-- For each example, runs the retriever target function
-- Computes span-based metrics (recall, precision, IoU, F1)
-- Creates properly linked runs in LangSmith
+- Creates a `CallbackRetriever` (from eval-lib) backed by Convex vector search
+- Defines a target function that runs retrieval and converts results to serialized spans
+- Creates LangSmith evaluators from eval-lib's metric functions (`recall`, `precision`, `iou`, `f1`)
+- Calls `langsmith/evaluation.evaluate()` directly (not via eval-lib)
 - Calls `onResult` callback after each example completes
+
+### Metrics
+
+The experiment runner imports individual metric objects directly from eval-lib:
+
+```typescript
+import { recall, precision, iou, f1, type Metric } from "rag-evaluation-system";
+```
+
+These are used to create LangSmith evaluator functions that compute span-based scores for each example.
 
 ### Result Correlation
 

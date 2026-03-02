@@ -45,9 +45,9 @@ Two levels of hashing prevent duplicate work:
 | Hash | Computed From | Purpose |
 |------|---------------|---------|
 | `indexConfigHash` | `computeIndexConfigHash(config)` — chunking strategy, chunkSize, chunkOverlap, separators, embeddingModel | Dedup indexing: same chunking + embedding = reuse chunks |
-| `retrieverConfigHash` | `computeRetrieverConfigHash(config, k)` — full pipeline config + k | Dedup retrievers: same full config = reuse retriever record |
+| `retrieverConfigHash` | `computeRetrieverConfigHash(config, k)` — all 4 pipeline stages + k | Dedup retrievers: same full config = reuse retriever record |
 
-Both require Node.js `crypto` module, so computation happens in actions (not mutations).
+Both use `stableStringify()` (recursively sorts object keys) → SHA-256 → hex. Two configs with identical settings produce the same hash regardless of property order or `name` field. Both require Node.js `crypto` module, so computation happens in actions (not mutations).
 
 ---
 
