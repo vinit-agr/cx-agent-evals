@@ -25,7 +25,8 @@ export function FileUploader({ kbId }: FileUploaderProps) {
     let failed = 0;
 
     for (const file of Array.from(files)) {
-      if (!file.name.endsWith(".md") && !file.name.endsWith(".txt")) {
+      const ACCEPTED_EXTENSIONS = [".md", ".txt", ".pdf", ".html", ".htm"];
+      if (!ACCEPTED_EXTENSIONS.some((ext) => file.name.toLowerCase().endsWith(ext))) {
         failed++;
         continue;
       }
@@ -49,7 +50,10 @@ export function FileUploader({ kbId }: FileUploaderProps) {
         const { storageId } = await result.json();
 
         // Read file content on the client (mutations can't use fetch())
-        const content = await file.text();
+        const isPdf = file.name.toLowerCase().endsWith(".pdf");
+        const isHtml = file.name.toLowerCase().endsWith(".html") || file.name.toLowerCase().endsWith(".htm");
+        const content = isPdf ? "" : await file.text();
+        const sourceType = isPdf ? "pdf" : isHtml ? "html" : "markdown";
 
         // Create document record
         await createDocument({
@@ -57,6 +61,7 @@ export function FileUploader({ kbId }: FileUploaderProps) {
           storageId: storageId as Id<"_storage">,
           title: file.name,
           content,
+          sourceType,
         });
 
         success++;
@@ -105,7 +110,7 @@ export function FileUploader({ kbId }: FileUploaderProps) {
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".md,.txt"
+          accept=".md,.txt,.pdf,.html,.htm"
           onChange={(e) => handleFiles(e.target.files)}
           className="hidden"
         />
@@ -117,7 +122,7 @@ export function FileUploader({ kbId }: FileUploaderProps) {
           </div>
         ) : (
           <div className="text-text-dim text-xs">
-            <p>Drop .md files here or click to browse</p>
+            <p>Drop .md, .pdf, .html files here or click to browse</p>
           </div>
         )}
       </div>

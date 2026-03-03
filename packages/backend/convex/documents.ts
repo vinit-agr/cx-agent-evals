@@ -13,9 +13,10 @@ export const generateUploadUrl = mutation({
 export const create = mutation({
   args: {
     kbId: v.id("knowledgeBases"),
-    storageId: v.id("_storage"),
+    storageId: v.optional(v.id("_storage")),
     title: v.string(),
     content: v.string(),
+    sourceType: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const { orgId } = await getAuthContext(ctx);
@@ -35,9 +36,10 @@ export const create = mutation({
       docId,
       title: args.title,
       content,
-      fileId: args.storageId,
+      ...(args.storageId ? { fileId: args.storageId } : {}),
       contentLength: content.length,
       metadata: {},
+      ...(args.sourceType ? { sourceType: args.sourceType } : {}),
       createdAt: Date.now(),
     });
   },
