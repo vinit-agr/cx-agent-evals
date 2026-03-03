@@ -9,6 +9,7 @@ import { v } from "convex/values";
 import { Workpool, vOnCompleteArgs, type RunResult } from "@convex-dev/workpool";
 import { getAuthContext } from "./lib/auth";
 import { Id } from "./_generated/dataModel";
+import type { JobStatus } from "rag-evaluation-system/shared";
 
 // ─── WorkPool Instance ───
 
@@ -212,7 +213,6 @@ export const onDocumentIndexed = internalMutation({
     const totalHandled = processedDocs + failedDocs + skippedDocs;
     const isComplete = totalHandled >= job.totalDocs;
 
-    type JobStatus = "pending" | "running" | "completed" | "completed_with_errors" | "failed" | "canceling" | "canceled";
     let status: JobStatus = job.status;
     let completedAt: number | undefined;
 

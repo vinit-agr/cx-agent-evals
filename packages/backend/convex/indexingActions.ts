@@ -5,28 +5,10 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import {
   RecursiveCharacterChunker,
-  OpenAIEmbedder,
   createDocument,
 } from "rag-evaluation-system";
-import OpenAI from "openai";
-
-/** Number of chunks to embed in one API call / checkpoint batch */
-const EMBED_BATCH_SIZE = 200;
-
-/** Deletion batch size for cleanup */
-const CLEANUP_BATCH_SIZE = 500;
-
-// ─── Helpers ───
-
-function createEmbedder(model?: string) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
-  const openai = new OpenAI({ apiKey });
-  return new OpenAIEmbedder({
-    model: model ?? "text-embedding-3-small",
-    client: openai,
-  });
-}
+import { EMBED_BATCH_SIZE, CLEANUP_BATCH_SIZE } from "rag-evaluation-system/shared";
+import { createEmbedder } from "rag-evaluation-system/llm";
 
 // ─── Two-Phase Document Indexing Action ───
 

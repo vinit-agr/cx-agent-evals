@@ -7,23 +7,10 @@ import { Id } from "./_generated/dataModel";
 import {
   computeIndexConfigHash,
   computeRetrieverConfigHash,
-  OpenAIEmbedder,
   type PipelineConfig,
 } from "rag-evaluation-system";
-import OpenAI from "openai";
+import { createEmbedder } from "rag-evaluation-system/llm";
 import { getAuthContext } from "./lib/auth";
-
-// ─── Helpers ───
-
-function createEmbedder(model?: string) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
-  const openai = new OpenAI({ apiKey });
-  return new OpenAIEmbedder({
-    model: model ?? "text-embedding-3-small",
-    client: openai,
-  });
-}
 
 // ─── Create Retriever ───
 

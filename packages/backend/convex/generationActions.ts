@@ -4,7 +4,6 @@ import { internalAction } from "./_generated/server";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
-import { createLLMClient } from "./lib/llm";
 import {
   SimpleStrategy,
   DimensionDrivenStrategy,
@@ -14,13 +13,9 @@ import {
   createCorpusFromDocuments,
   parseDimensions,
 } from "rag-evaluation-system";
+import { createLLMClient, getModel } from "rag-evaluation-system/llm";
+import { QUESTION_INSERT_BATCH_SIZE } from "rag-evaluation-system/shared";
 import OpenAI from "openai";
-
-// ─── Helpers ───
-
-function getModel(strategyConfig: Record<string, unknown>): string {
-  return (strategyConfig.model as string) ?? "gpt-4o";
-}
 
 async function loadCorpusFromKb(
   ctx: { runQuery: (ref: any, args: any) => Promise<any> },
@@ -63,9 +58,8 @@ export const generateForDocument = internalAction({
     const queries = await strategy.generate({ corpus, llmClient, model });
 
     if (queries.length > 0) {
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < queries.length; i += BATCH_SIZE) {
-        const batch = queries.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < queries.length; i += QUESTION_INSERT_BATCH_SIZE) {
+        const batch = queries.slice(i, i + QUESTION_INSERT_BATCH_SIZE);
         await ctx.runMutation(internal.questions.insertBatch, {
           datasetId: args.datasetId,
           questions: batch.map((q, idx) => ({
@@ -109,9 +103,8 @@ export const generateDimensionDriven = internalAction({
     const queries = await strategy.generate({ corpus, llmClient, model });
 
     if (queries.length > 0) {
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < queries.length; i += BATCH_SIZE) {
-        const batch = queries.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < queries.length; i += QUESTION_INSERT_BATCH_SIZE) {
+        const batch = queries.slice(i, i + QUESTION_INSERT_BATCH_SIZE);
         await ctx.runMutation(internal.questions.insertBatch, {
           datasetId: args.datasetId,
           questions: batch.map((q, idx) => ({
@@ -170,9 +163,8 @@ export const generateRealWorldGrounded = internalAction({
     });
 
     if (queries.length > 0) {
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < queries.length; i += BATCH_SIZE) {
-        const batch = queries.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < queries.length; i += QUESTION_INSERT_BATCH_SIZE) {
+        const batch = queries.slice(i, i + QUESTION_INSERT_BATCH_SIZE);
         await ctx.runMutation(internal.questions.insertBatch, {
           datasetId: args.datasetId,
           questions: batch.map((q, idx) => ({

@@ -9,6 +9,7 @@ import { v } from "convex/values";
 import { Workpool, WorkId, vOnCompleteArgs, type RunResult } from "@convex-dev/workpool";
 import { getAuthContext } from "./lib/auth";
 import { Id } from "./_generated/dataModel";
+import type { JobStatus } from "rag-evaluation-system/shared";
 
 // ─── WorkPool Instance ───
 
@@ -21,10 +22,6 @@ const pool = new Workpool(components.generationPool, {
     base: 2,
   },
 });
-
-// ─── Shared Types ───
-
-type JobStatus = "pending" | "running" | "completed" | "completed_with_errors" | "failed" | "canceling" | "canceled";
 
 // ─── Shared onComplete Counter Logic (S3) ───
 
