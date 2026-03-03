@@ -62,9 +62,6 @@ export const insertBatch = internalMutation({
 });
 
 /**
- * Update a question's relevant spans (used by ground truth assignment).
- */
-/**
  * Internal query: list all questions in a dataset (no auth check).
  */
 export const byDatasetInternal = internalQuery({

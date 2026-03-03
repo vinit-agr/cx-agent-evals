@@ -70,9 +70,6 @@ export const updateSyncStatus = internalMutation({
 });
 
 /**
- * Update dataset question count.
- */
-/**
  * Internal query: get a dataset by ID (no auth check).
  */
 export const getInternal = internalQuery({
