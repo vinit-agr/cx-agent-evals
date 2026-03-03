@@ -129,7 +129,7 @@ export const startIndexing = action({
     );
 
     // Determine status
-    let status: string;
+    let status: "configuring" | "indexing" | "ready" | "error";
     let chunkCount: number | undefined;
 
     if (indexResult.alreadyCompleted) {

@@ -216,10 +216,26 @@ export const getInternal = internalQuery({
 export const updateStatus = internalMutation({
   args: {
     experimentId: v.id("experiments"),
-    status: v.string(),
-    scores: v.optional(v.any()),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("running"),
+      v.literal("completed"),
+      v.literal("completed_with_errors"),
+      v.literal("failed"),
+      v.literal("canceling"),
+      v.literal("canceled"),
+    ),
+    scores: v.optional(v.record(v.string(), v.number())),
     error: v.optional(v.string()),
-    phase: v.optional(v.string()),
+    phase: v.optional(
+      v.union(
+        v.literal("initializing"),
+        v.literal("indexing"),
+        v.literal("syncing"),
+        v.literal("evaluating"),
+        v.literal("done"),
+      ),
+    ),
     totalQuestions: v.optional(v.number()),
     processedQuestions: v.optional(v.number()),
     langsmithExperimentId: v.optional(v.string()),

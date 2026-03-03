@@ -25,7 +25,14 @@ export const byKb = query({
 
 export const byOrg = query({
   args: {
-    status: v.optional(v.string()),
+    status: v.optional(
+      v.union(
+        v.literal("configuring"),
+        v.literal("indexing"),
+        v.literal("ready"),
+        v.literal("error"),
+      ),
+    ),
   },
   handler: async (ctx, args) => {
     const { orgId } = await getAuthContext(ctx);
@@ -81,7 +88,12 @@ export const insertRetriever = internalMutation({
     retrieverConfigHash: v.string(),
     defaultK: v.number(),
     indexingJobId: v.optional(v.id("indexingJobs")),
-    status: v.string(),
+    status: v.union(
+      v.literal("configuring"),
+      v.literal("indexing"),
+      v.literal("ready"),
+      v.literal("error"),
+    ),
     chunkCount: v.optional(v.number()),
     createdBy: v.id("users"),
   },
@@ -95,7 +107,7 @@ export const insertRetriever = internalMutation({
       retrieverConfigHash: args.retrieverConfigHash,
       defaultK: args.defaultK,
       indexingJobId: args.indexingJobId,
-      status: args.status as "configuring" | "indexing" | "ready" | "error",
+      status: args.status,
       chunkCount: args.chunkCount,
       createdBy: args.createdBy,
       createdAt: Date.now(),
@@ -110,13 +122,18 @@ export const updateIndexingStatus = internalMutation({
   args: {
     retrieverId: v.id("retrievers"),
     indexingJobId: v.id("indexingJobs"),
-    status: v.string(),
+    status: v.union(
+      v.literal("configuring"),
+      v.literal("indexing"),
+      v.literal("ready"),
+      v.literal("error"),
+    ),
     chunkCount: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     await ctx.db.patch(args.retrieverId, {
       indexingJobId: args.indexingJobId,
-      status: args.status as "configuring" | "indexing" | "ready" | "error",
+      status: args.status,
       chunkCount: args.chunkCount,
       error: undefined,
     });

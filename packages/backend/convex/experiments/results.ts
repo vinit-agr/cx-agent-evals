@@ -43,7 +43,7 @@ export const insert = internalMutation({
     experimentId: v.id("experiments"),
     questionId: v.id("questions"),
     retrievedSpans: v.array(spanValidator),
-    scores: v.any(),
+    scores: v.record(v.string(), v.number()),
     metadata: v.optional(v.any()),
   },
   handler: async (ctx, args) => {

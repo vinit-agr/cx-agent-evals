@@ -159,17 +159,23 @@ export default defineSchema({
       v.literal("canceling"),
       v.literal("canceled"),
     ),
-    phase: v.optional(v.string()),
+    phase: v.optional(
+      v.union(
+        v.literal("initializing"),
+        v.literal("indexing"),
+        v.literal("syncing"),
+        v.literal("evaluating"),
+        v.literal("done"),
+      ),
+    ),
     totalQuestions: v.optional(v.number()),
     processedQuestions: v.optional(v.number()),
-    failedQuestions: v.optional(v.number()),
-    skippedQuestions: v.optional(v.number()),
     workIds: v.optional(v.array(v.string())),
-    indexConfigHash: v.optional(v.string()),
-    scores: v.optional(v.any()),
+    scores: v.optional(v.record(v.string(), v.number())),
+    // TODO: populate langsmithExperimentId from evaluate() result
     langsmithExperimentId: v.optional(v.string()),
+    // TODO: populate langsmithUrl from evaluate() result (used in frontend for experiment links)
     langsmithUrl: v.optional(v.string()),
-    langsmithSyncStatus: v.optional(v.string()),
     error: v.optional(v.string()),
     createdBy: v.id("users"),
     createdAt: v.number(),
@@ -184,7 +190,7 @@ export default defineSchema({
     experimentId: v.id("experiments"),
     questionId: v.id("questions"),
     retrievedSpans: v.array(spanValidator),
-    scores: v.any(),
+    scores: v.record(v.string(), v.number()),
     metadata: v.any(),
   }).index("by_experiment", ["experimentId"]),
 
