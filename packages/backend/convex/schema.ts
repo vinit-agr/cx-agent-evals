@@ -56,7 +56,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_org", ["orgId"])
-    .index("by_kb", ["kbId"]),
+    .index("by_kb", ["kbId"])
+    .index("by_sync_status", ["langsmithSyncStatus"]),
 
   // ─── Questions (individual questions within a dataset) ───
   questions: defineTable({
