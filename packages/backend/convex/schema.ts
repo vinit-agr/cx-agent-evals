@@ -236,6 +236,7 @@ export default defineSchema({
     failedDocs: v.number(),
     skippedDocs: v.number(),
     totalChunks: v.number(),
+    workIds: v.optional(v.array(v.string())),
     error: v.optional(v.string()),
     failedDocDetails: v.optional(
       v.array(

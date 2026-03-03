@@ -6,7 +6,7 @@ import {
 } from "../_generated/server";
 import { components, internal } from "../_generated/api";
 import { v } from "convex/values";
-import { Workpool, vOnCompleteArgs, type RunResult } from "@convex-dev/workpool";
+import { Workpool, WorkId, vOnCompleteArgs, type RunResult } from "@convex-dev/workpool";
 import { getAuthContext } from "../lib/auth";
 import { Id } from "../_generated/dataModel";
 import type { JobStatus } from "rag-evaluation-system/shared";
@@ -127,9 +127,10 @@ export const startIndexing = internalMutation({
     // Extract chunking/embedding config
     const indexConfig = args.indexConfig as Record<string, any>;
 
-    // Enqueue one action per document with per-document context
+    // Enqueue one action per document and collect workIds for selective cancellation
+    const workIds: WorkId[] = [];
     for (const doc of docs) {
-      await pool.enqueueAction(
+      const wId = await pool.enqueueAction(
         ctx,
         internal.retrieval.indexingActions.indexDocument,
         {
@@ -145,7 +146,11 @@ export const startIndexing = internalMutation({
           onComplete: internal.retrieval.indexing.onDocumentIndexed,
         },
       );
+      workIds.push(wId);
     }
+
+    // Store workIds on the job for selective cancellation
+    await ctx.db.patch(jobId, { workIds: workIds as string[] });
 
     return { jobId, alreadyRunning: false, totalDocs: docs.length };
   },
@@ -331,8 +336,9 @@ export const listJobs = query({
 
 /**
  * Cancel a running indexing job. Sets status to "canceling" and cancels
- * all pending WorkPool items. Already-running actions will finish normally.
- * The job transitions to "canceled" once all in-progress documents complete.
+ * only this job's pending WorkPool items. Already-running actions will
+ * finish normally. The job transitions to "canceled" once all in-progress
+ * documents complete.
  */
 export const cancelIndexing = mutation({
   args: { jobId: v.id("indexingJobs") },
@@ -346,10 +352,13 @@ export const cancelIndexing = mutation({
       throw new Error(`Cannot cancel job in status: ${job.status}`);
     }
 
-    await pool.cancelAll(ctx);
-    await ctx.db.patch(args.jobId, {
-      status: "canceling",
-    });
+    // Set status to "canceling" first so in-flight callbacks see the updated state
+    await ctx.db.patch(args.jobId, { status: "canceling" });
+
+    // Cancel only this job's work items, not the entire pool
+    for (const wId of job.workIds ?? []) {
+      await pool.cancel(ctx, wId as WorkId);
+    }
   },
 });
 
