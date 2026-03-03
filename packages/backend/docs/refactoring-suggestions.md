@@ -9,7 +9,7 @@
 ## Table of Contents
 
 1. [Guiding Principle: Separation of Concerns](#1-guiding-principle-separation-of-concerns)
-2. [Two-Package Architecture](#2-two-package-architecture)
+2. [Extracting Non-Convex Code to eval-lib](#2-extracting-non-convex-code-to-eval-lib)
 3. [Convex Directory Reorganization](#3-convex-directory-reorganization)
 4. [Dead Code & Deprecation Cleanup](#4-dead-code--deprecation-cleanup)
 5. [Code Duplication Elimination](#5-code-duplication-elimination)
@@ -35,68 +35,89 @@ The worst example is `experimentActions.ts` (489 lines) which contains 127 lines
 
 **The goal**: establish a clear boundary so that:
 - Convex files contain **only** Convex-specific orchestration
-- Pure TypeScript / external SDK code lives in a separate workspace package
+- Pure TypeScript / external SDK code lives in the eval-lib package (`packages/eval-lib/`)
 - Anyone new can immediately tell "this is Convex code" vs "this is just TypeScript"
 - The non-Convex code is independently testable with simple mocks
 - The codebase is structured to be portable (the non-Convex layer could theoretically run on Express, Fastify, etc.)
+- We maintain exactly three packages: `eval-lib`, `backend`, `frontend`
 
 ---
 
-## 2. Two-Package Architecture
+## 2. Extracting Non-Convex Code to eval-lib
 
 ### Design
 
-Split the backend into two packages:
+Instead of creating a new package, extract non-Convex code from `packages/backend/convex/` into the existing `packages/eval-lib/` package (`rag-evaluation-system`). This keeps the workspace at exactly three packages:
 
-**`packages/backend-lib/`** — Pure TypeScript + external SDK code. Zero Convex dependency.
+1. **`packages/eval-lib/`** — All pure TypeScript code: evaluation core, strategies, metrics, LangSmith integration, embedder/LLM factories, shared types
+2. **`packages/backend/convex/`** — Convex-specific orchestration only. Thin wrappers that import from `rag-evaluation-system`
+3. **`packages/frontend/`** — Next.js UI
 
-**`packages/backend/convex/`** — Convex-specific orchestration only. Thin wrappers that import from `@rag-eval/backend-lib`.
+The boundary rule: **if a function doesn't need `ctx` (Convex context), it belongs in eval-lib.**
 
-The boundary rule: **if a function doesn't need `ctx` (Convex context), it belongs in backend-lib.**
+The backend already imports from `rag-evaluation-system` — this just expands what lives there. The Convex bundler resolves workspace packages via `node_modules`, so this is a proven, first-class pattern. Internal module structure within eval-lib provides natural extraction boundaries if specific modules need to be published separately later.
 
-This mirrors how the backend already imports from `rag-evaluation-system` (the eval-lib workspace package). The Convex bundler resolves workspace packages via `node_modules` — this is a proven, first-class pattern.
+### New eval-lib Modules
 
-### `backend-lib/` Package Structure
+These modules are **added** to eval-lib's existing `src/` directory alongside the current modules (chunkers, embedders, evaluation, etc.):
 
 ```
-packages/backend-lib/
-├── src/
-│   ├── langsmith/
-│   │   ├── client.ts              # getLangSmithClient()
-│   │   ├── experiment.ts          # runLangSmithExperiment(), evaluator helpers, types
-│   │   ├── upload.ts              # uploadDataset(), UploadOptions, UploadResult
-│   │   └── index.ts              # barrel export
-│   ├── embedder.ts               # createEmbedder() — single copy, replaces 4 duplicates
-│   ├── llm.ts                    # createLLMClient() — OpenAI adapter for eval-lib LLMClient
-│   ├── config.ts                 # getModel(), config resolution helpers
-│   ├── corpus.ts                 # buildCorpusFromDocs() — raw doc records → eval-lib Corpus
-│   ├── types.ts                  # JobStatus, SerializedSpan, ExperimentResult
-│   ├── constants.ts              # EMBED_BATCH_SIZE, CLEANUP_BATCH_SIZE, BATCH_SIZE, TIER_PARALLELISM
-│   └── index.ts                  # root barrel export
-├── tests/                        # Pure unit tests (no Convex needed)
-│   ├── langsmith/
-│   │   ├── experiment.test.ts    # Mock LangSmith evaluate(), test evaluator creation
-│   │   └── upload.test.ts        # Mock LangSmith client, test batch upload
-│   ├── embedder.test.ts          # Mock OpenAI, test error handling
-│   ├── corpus.test.ts            # Test corpus building from raw doc records
-│   └── config.test.ts            # Test config resolution
-├── package.json                  # "@rag-eval/backend-lib"
-├── tsconfig.json
-└── tsup.config.ts
+packages/eval-lib/src/
+├── chunkers/                 # (existing) Chunker interface + RecursiveCharacterChunker
+├── embedders/                # (existing) Embedder interface + OpenAI implementation
+├── evaluation/               # (existing) Evaluation orchestrator and metrics
+├── experiments/              # (existing) Experiment runner, CallbackRetriever
+├── pipeline/                 # (existing) Pipeline configuration, internals
+├── rerankers/                # (existing) Reranker interface + Cohere
+├── retrievers/               # (existing) Retriever interfaces
+├── synthetic-datagen/        # (existing) Question generation strategies
+├── types/                    # (existing) Branded types, primitives
+├── utils/                    # (existing) Hashing, span utilities
+├── vector-stores/            # (existing) VectorStore interface
+│
+├── langsmith/                # NEW — extracted from backend
+│   ├── client.ts             # getLangSmithClient()
+│   ├── experiment.ts         # runLangSmithExperiment(), evaluator helpers, types
+│   ├── upload.ts             # uploadDataset(), UploadOptions, UploadResult
+│   └── index.ts              # barrel export
+├── llm/                      # NEW — extracted from backend
+│   ├── client.ts             # createLLMClient() — OpenAI adapter for eval-lib LLMClient
+│   ├── embedder-factory.ts   # createEmbedder() — single copy, replaces 4 duplicates
+│   ├── config.ts             # getModel(), config resolution helpers
+│   └── index.ts              # barrel export
+└── shared/                   # NEW — extracted from backend
+    ├── corpus.ts             # buildCorpusFromDocs() — raw doc records → eval-lib Corpus
+    ├── types.ts              # JobStatus, SerializedSpan, ExperimentResult
+    ├── constants.ts          # EMBED_BATCH_SIZE, CLEANUP_BATCH_SIZE, BATCH_SIZE, TIER_PARALLELISM
+    └── index.ts              # barrel export
+```
+
+New tests alongside existing eval-lib tests:
+
+```
+packages/eval-lib/tests/
+├── langsmith/
+│   ├── experiment.test.ts    # Mock LangSmith evaluate(), test evaluator creation
+│   └── upload.test.ts        # Mock LangSmith client, test batch upload
+├── llm/
+│   ├── embedder-factory.test.ts  # Mock OpenAI, test error handling
+│   └── config.test.ts       # Test config resolution
+└── shared/
+    └── corpus.test.ts        # Test corpus building from raw doc records
 ```
 
 ### What Moves
 
 | Currently In | Moves To | What |
 |---|---|---|
-| `experimentActions.ts` lines 28-154 | `backend-lib/src/langsmith/experiment.ts` | `runLangSmithExperiment()`, `createLangSmithEvaluator()`, `createLangSmithEvaluators()`, `ExperimentResult`, `SerializedSpan`, `deserializeSpans()`, `LangSmithExperimentConfig`, `DEFAULT_METRICS` |
-| `langsmithSync.ts` lines 15-102 | `backend-lib/src/langsmith/upload.ts` | `uploadDataset()`, `UploadProgress`, `UploadOptions`, `UploadResult` |
-| `lib/langsmith.ts` (4 lines) | `backend-lib/src/langsmith/client.ts` | `getLangSmithClient()` |
-| `lib/llm.ts` (20 lines) | `backend-lib/src/llm.ts` | `createLLMClient()` |
-| 4 copies of `createEmbedder()` | `backend-lib/src/embedder.ts` | Single `createEmbedder()` |
-| `generationActions.ts` `getModel()` | `backend-lib/src/config.ts` | Config resolution helpers |
-| `generation.ts` `JobStatus` type | `backend-lib/src/types.ts` | Shared `JobStatus` type |
-| Magic numbers across action files | `backend-lib/src/constants.ts` | `EMBED_BATCH_SIZE`, `CLEANUP_BATCH_SIZE`, `BATCH_SIZE`, `TIER_PARALLELISM` |
+| `experimentActions.ts` lines 28-154 | `eval-lib/src/langsmith/experiment.ts` | `runLangSmithExperiment()`, `createLangSmithEvaluator()`, `createLangSmithEvaluators()`, `ExperimentResult`, `SerializedSpan`, `deserializeSpans()`, `LangSmithExperimentConfig`, `DEFAULT_METRICS` |
+| `langsmithSync.ts` lines 15-102 | `eval-lib/src/langsmith/upload.ts` | `uploadDataset()`, `UploadProgress`, `UploadOptions`, `UploadResult` |
+| `lib/langsmith.ts` (4 lines) | `eval-lib/src/langsmith/client.ts` | `getLangSmithClient()` |
+| `lib/llm.ts` (20 lines) | `eval-lib/src/llm/client.ts` | `createLLMClient()` |
+| 4 copies of `createEmbedder()` | `eval-lib/src/llm/embedder-factory.ts` | Single `createEmbedder()` |
+| `generationActions.ts` `getModel()` | `eval-lib/src/llm/config.ts` | Config resolution helpers |
+| `generation.ts` `JobStatus` type | `eval-lib/src/shared/types.ts` | Shared `JobStatus` type |
+| Magic numbers across action files | `eval-lib/src/shared/constants.ts` | `EMBED_BATCH_SIZE`, `CLEANUP_BATCH_SIZE`, `BATCH_SIZE`, `TIER_PARALLELISM` |
 
 ### What Stays in Convex
 
@@ -109,46 +130,37 @@ packages/backend-lib/
 
 ### Package Wiring
 
+eval-lib already exists as a workspace dependency. The only changes needed:
+
 ```json
-// packages/backend-lib/package.json
+// packages/eval-lib/package.json (add dependencies for extracted code)
 {
-  "name": "@rag-eval/backend-lib",
-  "version": "0.1.0",
-  "type": "module",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "dependencies": {
-    "rag-evaluation-system": "workspace:*",
-    "openai": "^4.x",
     "langsmith": "^0.x",
     "@langchain/core": "^0.x"
+    // openai already present
   }
 }
 ```
 
 ```json
-// packages/backend/package.json (add dependency)
-{
-  "dependencies": {
-    "@rag-eval/backend-lib": "workspace:*"
-  }
-}
+// packages/eval-lib/tsup.config.ts (add new sub-path exports)
+// Add entry points: src/langsmith/index.ts, src/llm/index.ts, src/shared/index.ts
 ```
 
 ```json
-// packages/backend/convex.json (add to externalPackages)
+// packages/eval-lib/package.json (add exports for new modules)
 {
-  "node": {
-    "externalPackages": ["langsmith", "@langchain/core", "openai", "@rag-eval/backend-lib"]
+  "exports": {
+    ".": "./dist/index.js",
+    "./langsmith": "./dist/langsmith/index.js",
+    "./llm": "./dist/llm/index.js",
+    "./shared": "./dist/shared/index.js"
   }
 }
 ```
 
-```yaml
-# pnpm-workspace.yaml (add entry)
-packages:
-  - "packages/backend-lib"
-```
+No changes to `pnpm-workspace.yaml`. No new package to register.
 
 ### Impact on `experimentActions.ts`
 
@@ -158,7 +170,8 @@ After: **~250 lines** (pure Convex orchestration + bridge code):
 
 ```typescript
 "use node";
-import { createEmbedder, runLangSmithExperiment, buildCorpusFromDocs } from "@rag-eval/backend-lib";
+import { createEmbedder, runLangSmithExperiment } from "rag-evaluation-system/langsmith";
+import { createLLMClient } from "rag-evaluation-system/llm";
 import { CallbackRetriever, DocumentId, PositionAwareChunkId, positionAwareChunkToSpan } from "rag-evaluation-system";
 // ... Convex imports
 
@@ -215,7 +228,7 @@ packages/backend/convex/
 │   └── retrievers.ts             # Retriever CRUD + status sync
 │
 └── langsmith/                     # LangSmith Convex wrappers
-    ├── sync.ts                    # Dataset sync action (thin: delegates to backend-lib)
+    ├── sync.ts                    # Dataset sync action (thin: delegates to eval-lib)
     ├── retry.ts                   # Manual retry mutation
     └── syncRetry.ts               # Cron-driven auto-retry
 ```
@@ -270,8 +283,8 @@ All `internal.*` and `api.*` references change when files move. The `_generated/
 |---|---|
 | `ragActions.ts` | Deprecated, no callers. `indexSingleDocument()` replaced by `indexingActions.indexDocument`. |
 | `testing.ts` | Empty file. |
-| `lib/llm.ts` | Moved to `backend-lib/src/llm.ts`. |
-| `lib/langsmith.ts` | Moved to `backend-lib/src/langsmith/client.ts`. |
+| `lib/llm.ts` | Moved to `eval-lib/src/llm/client.ts`. |
+| `lib/langsmith.ts` | Moved to `eval-lib/src/langsmith/client.ts`. |
 | `README.md` | Default Convex boilerplate. Replace with link to `docs/`. |
 
 ---
@@ -310,7 +323,7 @@ grep -r "retrieverConfig" packages/backend/convex/ --include="*.ts"  # Check leg
 
 The exact same function appears in `indexingActions.ts`, `retrieverActions.ts`, `experimentActions.ts`, and `ragActions.ts` (deprecated).
 
-**Fix**: Single copy in `backend-lib/src/embedder.ts`. All action files import from `@rag-eval/backend-lib`.
+**Fix**: Single copy in `eval-lib/src/llm/embedder-factory.ts`. All action files import from `rag-evaluation-system/llm`.
 
 ### 5.2 `spanValidator` — 3 Copies → 1
 
@@ -322,7 +335,7 @@ Defined identically in `schema.ts`, `questions.ts`, and `experimentResults.ts`.
 
 Defined locally in `generation.ts`, `indexing.ts`, and inline in `experiments.ts`.
 
-**Fix**: Define once in `backend-lib/src/types.ts`.
+**Fix**: Define once in `eval-lib/src/shared/types.ts`.
 
 ### 5.4 `applyResult` / `counterPatch` Logic — 2 Copies → 1
 
@@ -340,7 +353,7 @@ export function applyWorkResult<T extends { processed: number; failed: number; s
 
 The `BATCH_SIZE=100` loop for inserting questions is copy-pasted across all three generation actions in `generationActions.ts`.
 
-**Fix**: Extract to a shared helper in `generationActions.ts` or `backend-lib/src/constants.ts` for the constant + inline a single helper function.
+**Fix**: Extract to a shared helper in `generationActions.ts` or `eval-lib/src/shared/constants.ts` for the constant + inline a single helper function.
 
 ### 5.6 Vector Search Pattern — 2 Copies → 1
 
@@ -484,19 +497,21 @@ Contains an `internalAction` but is missing the `"use node"` directive. Verify a
 
 The refactor creates two testable layers:
 
-**Layer 1: `backend-lib` tests** — Pure unit tests, no Convex required:
+**Layer 1: eval-lib tests for extracted code** — Pure unit tests, no Convex required:
 
 ```
-packages/backend-lib/tests/
+packages/eval-lib/tests/
 ├── langsmith/
 │   ├── experiment.test.ts       # Mock LangSmith evaluate(), test evaluator creation, metric wiring
 │   └── upload.test.ts           # Mock LangSmith client, test batch upload, retry behavior
-├── embedder.test.ts             # Mock OpenAI, test embedder creation, error handling
-├── corpus.test.ts               # Test corpus building from raw doc records
-└── config.test.ts               # Test config resolution
+├── llm/
+│   ├── embedder-factory.test.ts # Mock OpenAI, test embedder creation, error handling
+│   └── config.test.ts           # Test config resolution
+└── shared/
+    └── corpus.test.ts           # Test corpus building from raw doc records
 ```
 
-These are the **easiest tests to write** because they test pure functions with mockable dependencies. No Convex runtime needed. Standard vitest.
+These are the **easiest tests to write** because they test pure functions with mockable dependencies. No Convex runtime needed. Standard vitest. They live alongside eval-lib's existing 133 tests.
 
 **Layer 2: Convex tests** — `convex-test` integration tests:
 
@@ -555,7 +570,7 @@ packages/backend/tests/
 
 ### Testing Principles
 
-1. **backend-lib tests first** — Easiest to write, highest value. The hardest-to-test code (LangSmith, embedder, upload) moves here where it can be tested with simple mocks.
+1. **eval-lib tests for extracted code first** — Easiest to write, highest value. The hardest-to-test code (LangSmith, embedder, upload) moves to eval-lib where it can be tested with simple mocks.
 2. **Convex tests for orchestration only** — Test callbacks, status transitions, WorkPool interactions. Don't test LangSmith or OpenAI logic in Convex tests.
 3. **Extract shared test helpers** — `tests/helpers.ts` with common seeders, eliminating duplication across test files.
 4. **Integration tests later** — Full flow tests (create KB → upload → generate → verify) need action mocking and are lower priority.
@@ -577,22 +592,24 @@ Quick wins that reduce noise before the structural refactor:
 - [ ] Fix dangling docstrings in `datasets.ts` and `questions.ts`
 - [ ] Replace boilerplate `README.md` with link to `docs/`
 
-### Phase 2: Create `backend-lib` Package (Medium Risk)
+### Phase 2: Extract Non-Convex Code to eval-lib (Medium Risk)
 
-Extract non-Convex code into a workspace package:
+Move non-Convex code into new modules within the existing eval-lib package:
 
-- [ ] Scaffold `packages/backend-lib/` (package.json, tsconfig, tsup.config)
-- [ ] Add to `pnpm-workspace.yaml`
-- [ ] Move `createEmbedder()` → `backend-lib/src/embedder.ts`
-- [ ] Move `createLLMClient()` → `backend-lib/src/llm.ts`
-- [ ] Move `getLangSmithClient()` → `backend-lib/src/langsmith/client.ts`
-- [ ] Move inlined `runLangSmithExperiment()` → `backend-lib/src/langsmith/experiment.ts`
-- [ ] Move inlined `uploadDataset()` → `backend-lib/src/langsmith/upload.ts`
-- [ ] Move `getModel()` → `backend-lib/src/config.ts`
-- [ ] Move `buildCorpusFromDocs()` → `backend-lib/src/corpus.ts`
-- [ ] Consolidate `JobStatus`, `SerializedSpan`, constants → `backend-lib/src/types.ts`, `backend-lib/src/constants.ts`
-- [ ] Add `@rag-eval/backend-lib` to backend `package.json` and `convex.json` externalPackages
-- [ ] Update all import sites in `convex/` to use `@rag-eval/backend-lib`
+- [ ] Create `eval-lib/src/langsmith/` module (client.ts, experiment.ts, upload.ts, index.ts)
+- [ ] Create `eval-lib/src/llm/` module (client.ts, embedder-factory.ts, config.ts, index.ts)
+- [ ] Create `eval-lib/src/shared/` module (corpus.ts, types.ts, constants.ts, index.ts)
+- [ ] Move `createEmbedder()` → `eval-lib/src/llm/embedder-factory.ts`
+- [ ] Move `createLLMClient()` → `eval-lib/src/llm/client.ts`
+- [ ] Move `getLangSmithClient()` → `eval-lib/src/langsmith/client.ts`
+- [ ] Move inlined `runLangSmithExperiment()` → `eval-lib/src/langsmith/experiment.ts`
+- [ ] Move inlined `uploadDataset()` → `eval-lib/src/langsmith/upload.ts`
+- [ ] Move `getModel()` → `eval-lib/src/llm/config.ts`
+- [ ] Move `buildCorpusFromDocs()` → `eval-lib/src/shared/corpus.ts`
+- [ ] Consolidate `JobStatus`, `SerializedSpan`, constants → `eval-lib/src/shared/types.ts`, `eval-lib/src/shared/constants.ts`
+- [ ] Add `langsmith` and `@langchain/core` to eval-lib `package.json` dependencies
+- [ ] Add sub-path exports to eval-lib `package.json` and tsup.config.ts
+- [ ] Update all import sites in `convex/` to use `rag-evaluation-system/langsmith`, `rag-evaluation-system/llm`, etc.
 - [ ] Delete `convex/lib/llm.ts` and `convex/lib/langsmith.ts`
 - [ ] Verify `pnpm build` and `npx convex dev --once` succeed
 
@@ -622,7 +639,7 @@ Move files into domain subfolders. **This changes all `api.*` and `internal.*` p
 
 ### Phase 5: Testing (No Risk to Production)
 
-- [ ] Add `backend-lib` unit tests (langsmith, embedder, corpus, config)
+- [ ] Add eval-lib unit tests for extracted code (langsmith, embedder, corpus, config)
 - [ ] Extract shared convex test helpers to `tests/helpers.ts`
 - [ ] Add `indexing.test.ts` — callbacks, dedup, retriever sync
 - [ ] Add `retrievers.test.ts` — CRUD, shared index protection

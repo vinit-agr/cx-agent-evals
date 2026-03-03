@@ -158,4 +158,6 @@ This import does **not** change. Only the property paths after `api.` change.
 
 ## eval-lib
 
-The `packages/eval-lib/` package has **zero Convex references** (no `api.*`, no `internal.*`, no Convex imports). It is not affected by the backend restructure.
+The `packages/eval-lib/` package has **zero Convex references** (no `api.*`, no `internal.*`, no Convex imports). It is not affected by the backend directory restructure.
+
+Note: As part of the broader refactor, eval-lib will **gain** new modules (`langsmith/`, `llm/`, `shared/`) extracted from backend action files. These are pure TypeScript with no Convex dependency and do not affect frontend API paths. See [Refactoring Suggestions §2](./refactoring-suggestions.md#2-extracting-non-convex-code-to-eval-lib) for details.
