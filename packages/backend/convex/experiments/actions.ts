@@ -19,6 +19,7 @@ import {
 } from "rag-evaluation-system/langsmith";
 import type { ExperimentResult } from "rag-evaluation-system/shared";
 import { createEmbedder } from "rag-evaluation-system/llm";
+import { vectorSearchWithFilter } from "../lib/vectorSearch";
 
 // ─── Orchestrator Action ───
 
@@ -244,25 +245,12 @@ export const runEvaluation = internalAction({
       name: "convex-vector-search",
       retrieveFn: async (query: string, topK: number) => {
         const queryEmbedding = await embedder.embedQuery(query);
-        const vectorLimit = Math.min(topK * 4, 256);
-        const searchResults = await ctx.vectorSearch(
-          "documentChunks",
-          "by_embedding",
-          {
-            vector: queryEmbedding,
-            limit: vectorLimit,
-            filter: (q: any) => q.eq("kbId", args.kbId),
-          },
-        );
-
-        const chunks = await ctx.runQuery(internal.retrieval.chunks.fetchChunksWithDocs, {
-          ids: searchResults.map((r: any) => r._id),
+        const { chunks: filtered } = await vectorSearchWithFilter(ctx, {
+          queryEmbedding,
+          kbId: args.kbId,
+          indexConfigHash: args.indexConfigHash,
+          topK,
         });
-
-        // Post-filter by indexConfigHash and take top-K
-        const filtered = chunks
-          .filter((c: any) => c.indexConfigHash === args.indexConfigHash)
-          .slice(0, topK);
 
         return filtered.map(
           (c: any): PositionAwareChunk => ({

@@ -11,6 +11,7 @@ import {
 } from "rag-evaluation-system";
 import { createEmbedder } from "rag-evaluation-system/llm";
 import { getAuthContext } from "../lib/auth";
+import { vectorSearchWithFilter } from "../lib/vectorSearch";
 
 // ─── Create Retriever ───
 
@@ -204,33 +205,13 @@ export const retrieve = action({
     const embedder = createEmbedder(embeddingModel);
     const queryEmbedding = await embedder.embedQuery(args.query);
 
-    // Vector search — filter by kbId, post-filter by indexConfigHash
-    const vectorLimit = Math.min(topK * 4, 256);
-    const searchResults = await ctx.vectorSearch(
-      "documentChunks",
-      "by_embedding",
-      {
-        vector: queryEmbedding,
-        limit: vectorLimit,
-        filter: (q: any) => q.eq("kbId", retriever.kbId),
-      },
-    );
-
-    // Hydrate chunks with document info
-    const chunks = await ctx.runQuery(internal.retrieval.chunks.fetchChunksWithDocs, {
-      ids: searchResults.map((r: any) => r._id),
+    // Vector search with post-filtering by indexConfigHash
+    const { chunks: filtered, scoreMap } = await vectorSearchWithFilter(ctx, {
+      queryEmbedding,
+      kbId: retriever.kbId,
+      indexConfigHash: retriever.indexConfigHash,
+      topK,
     });
-
-    // Build a score map from search results
-    const scoreMap = new Map<string, number>();
-    for (const r of searchResults) {
-      scoreMap.set(r._id.toString(), r._score);
-    }
-
-    // Post-filter by indexConfigHash and take top-K
-    const filtered = chunks
-      .filter((c: any) => c.indexConfigHash === retriever.indexConfigHash)
-      .slice(0, topK);
 
     return filtered.map((c: any) => ({
       chunkId: c.chunkId,
