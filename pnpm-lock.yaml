@@ -26,9 +26,6 @@ importers:
       langsmith:
         specifier: '>=0.1.0'
         version: 0.4.12(openai@4.104.0(ws@8.18.0)(zod@3.25.76))
-      minisearch:
-        specifier: ^7.2.0
-        version: 7.2.0
       openai:
         specifier: ^4.70.0
         version: 4.104.0(ws@8.18.0)(zod@3.25.76)
@@ -54,6 +51,12 @@ importers:
 
   packages/eval-lib:
     dependencies:
+      '@langchain/core':
+        specifier: '>=0.1.0'
+        version: 1.1.26(openai@6.17.0(ws@8.18.0)(zod@3.25.76))
+      langsmith:
+        specifier: '>=0.1.0'
+        version: 0.5.4(openai@6.17.0(ws@8.18.0)(zod@3.25.76))
       minisearch:
         specifier: ^7.2.0
         version: 7.2.0
@@ -5095,6 +5098,24 @@ snapshots:
       - '@opentelemetry/sdk-trace-base'
       - openai
 
+  '@langchain/core@1.1.26(openai@6.17.0(ws@8.18.0)(zod@3.25.76))':
+    dependencies:
+      '@cfworker/json-schema': 4.1.1
+      ansi-styles: 6.2.3
+      camelcase: 6.3.0
+      decamelize: 1.2.0
+      js-tiktoken: 1.0.21
+      langsmith: 0.5.4(openai@6.17.0(ws@8.18.0)(zod@3.25.76))
+      mustache: 4.2.0
+      p-queue: 6.6.2
+      uuid: 10.0.0
+      zod: 3.25.76
+    transitivePeerDependencies:
+      - '@opentelemetry/api'
+      - '@opentelemetry/exporter-trace-otlp-proto'
+      - '@opentelemetry/sdk-trace-base'
+      - openai
+
   '@napi-rs/wasm-runtime@0.2.12':
     dependencies:
       '@emnapi/core': 1.8.1
@@ -7183,6 +7204,17 @@ snapshots:
       uuid: 10.0.0
     optionalDependencies:
       openai: 4.104.0(ws@8.18.0)(zod@3.25.76)
+
+  langsmith@0.5.4(openai@6.17.0(ws@8.18.0)(zod@3.25.76)):
+    dependencies:
+      '@types/uuid': 10.0.0
+      chalk: 4.1.2
+      console-table-printer: 2.15.0
+      p-queue: 6.6.2
+      semver: 7.7.3
+      uuid: 10.0.0
+    optionalDependencies:
+      openai: 6.17.0(ws@8.18.0)(zod@3.25.76)
 
   language-subtag-registry@0.3.23: {}
 
