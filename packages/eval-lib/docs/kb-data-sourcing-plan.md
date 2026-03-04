@@ -28,6 +28,7 @@ This plan introduces:
 | Frontier state | Convex tables (crawlJobs + crawlUrls) | Persistent, queryable, survives restarts, enables progress UI |
 | Raw HTML storage | Not stored | HTML is available at source URL; only clean markdown persisted |
 | HTML parsing | jsdom for everything (readability + link extraction) | Already a dependency for readability; eliminates need for cheerio |
+| Backend file organization | Domain directory (`convex/scraping/`) | Follows established pattern: `generation/`, `retrieval/`, `experiments/`, `langsmith/` |
 
 ### Explicitly Out of Scope (v1)
 
@@ -40,7 +41,7 @@ This plan introduces:
 
 ## Phase 1: Schema Changes + KB Queries
 
-**Files**: `packages/backend/convex/schema.ts`, `packages/backend/convex/knowledgeBases.ts`
+**Files**: `packages/backend/convex/schema.ts`, `packages/backend/convex/crud/knowledgeBases.ts`, `packages/backend/convex/crud/documents.ts`
 
 ### 1a. Extend `knowledgeBases` table
 
@@ -130,13 +131,24 @@ crawlUrls: defineTable({
   .index("by_job_url", ["crawlJobId", "normalizedUrl"]),
 ```
 
-### 1f. Update `create` mutation
+### 1f. Update `create` mutation in `crud/knowledgeBases.ts`
 
 Add optional args to `knowledgeBases.create`: `industry`, `subIndustry`, `company`, `entityType`, `sourceUrl`, `tags`. Pass through to `ctx.db.insert`.
 
-### 1g. Add `listByIndustry` query
+The mutation lives at `convex/crud/knowledgeBases.ts` and is exposed as `api.crud.knowledgeBases.create` (Convex file-based routing).
 
-Uses `by_org_industry` index when industry filter is provided, falls back to `by_org` for unfiltered. Frontend handles any grouping/display logic client-side.
+### 1g. Update `create` mutation in `crud/documents.ts`
+
+The current `documents.create` mutation requires `storageId: v.id("_storage")` for file uploads. Scraped documents have no uploaded file. Either:
+
+- Make `storageId` optional in the existing mutation (simpler, one code path)
+- Add a separate internal mutation `createFromScrape` for scraped documents (cleaner separation)
+
+Recommended: Add an internal mutation `createFromScrape` in `crud/documents.ts` that accepts `content`, `sourceUrl`, `sourceType` without requiring a storage upload. The scraping orchestration calls this via `internal.crud.documents.createFromScrape`. The existing public `create` mutation stays unchanged.
+
+### 1h. Add `listByIndustry` query in `crud/knowledgeBases.ts`
+
+Uses `by_org_industry` index when industry filter is provided, falls back to `by_org` for unfiltered. Exposed as `api.crud.knowledgeBases.listByIndustry`. Frontend handles any grouping/display logic client-side.
 
 All schema changes are backward-compatible (optional fields, new tables, no migrations needed).
 
@@ -223,6 +235,15 @@ Library: `unpdf` (modern, TypeScript-native, async)
 
 Exports `processFile`, `htmlToMarkdown`, `pdfToMarkdown`, and all types.
 
+### Sub-path Export
+
+The file-processing module uses Node.js-only dependencies (`jsdom`, `@mozilla/readability`, `unpdf`). Following the established eval-lib sub-path isolation pattern (see `langsmith/`, `llm/`):
+
+- Export as `rag-evaluation-system/file-processing` sub-path
+- Do NOT re-export from the root barrel (`src/index.ts`)
+- Only `"use node"` action files in the backend may import from this sub-path
+- Add entry point to `tsup.config.ts` and sub-path export to `package.json`
+
 ### New dependencies for eval-lib
 
 ```
@@ -231,6 +252,8 @@ jsdom                  — DOM implementation for readability (Node.js)
 turndown               — HTML → Markdown conversion
 unpdf                  — PDF text extraction
 ```
+
+These must be added to the backend's `convex.json` `externalPackages` list so esbuild correctly externalizes them when bundling eval-lib code in `"use node"` action files.
 
 ---
 
@@ -342,6 +365,15 @@ Helper functions: `getSeedIndustries()`, `getSeedEntitiesByIndustry(industry)`.
 
 Exports `ContentScraper`, all types, `filterLinks`, `normalizeUrl`, seed company helpers.
 
+### Sub-path Export
+
+Same isolation pattern as file-processing: the scraper module uses `got-scraping` (Node.js-only).
+
+- Export as `rag-evaluation-system/scraper` sub-path
+- Do NOT re-export from the root barrel (`src/index.ts`)
+- Only `"use node"` action files may import from this sub-path
+- Add `got-scraping` to `convex.json` `externalPackages`
+
 ### New dependencies for eval-lib
 
 ```
@@ -358,11 +390,13 @@ The backend manages crawl lifecycle using WorkPool + persistent frontier tables.
 
 **File**: `packages/backend/convex/convex.config.ts`
 
+Add a fourth WorkPool instance alongside the existing three (`indexingPool`, `generationPool`, `experimentPool`):
+
 ```typescript
 app.use(workpool, { name: "scrapingPool" });
 ```
 
-**File**: `packages/backend/convex/scraping.ts`
+**File**: `packages/backend/convex/scraping/orchestration.ts`
 
 ```typescript
 const pool = new Workpool(components.scrapingPool, {
@@ -382,33 +416,33 @@ const pool = new Workpool(components.scrapingPool, {
 User triggers "Import from URL"
         │
         ▼
-  startCrawl mutation (scraping.ts)
+  startCrawl mutation (scraping/orchestration.ts)
   ├─ Create crawlJob record (status: "running")
   ├─ Insert seed URL(s) into crawlUrls (depth: 0, status: "pending")
   └─ Enqueue batchScrape action via WorkPool
         │
         ▼
-  batchScrape action (scrapingActions.ts, "use node")
+  batchScrape action (scraping/actions.ts, "use node")
   ├─ TIME_BUDGET = 9 minutes (1 min buffer before 10-min Convex timeout)
   ├─ LOOP while time remaining > 30s:
   │   ├─ Check crawlJob status (exit if cancelled)
   │   ├─ Check maxPages limit (exit if reached)
-  │   ├─ Query batch of pending URLs (10-20) from crawlUrls
-  │   ├─ Mark batch as "scraping" via mutation
+  │   ├─ Query batch of pending URLs (10-20) via internal.scraping.orchestration.getPendingUrls
+  │   ├─ Mark batch as "scraping" via internal.scraping.orchestration.markUrlsScraping
   │   ├─ For each URL (3-5 concurrent via Promise.allSettled):
   │   │   ├─ Respect delay config (rate limiting)
   │   │   ├─ Call eval-lib ContentScraper.scrape(url, options)
   │   │   ├─ Filter discovered links via eval-lib filterLinks()
-  │   │   ├─ Persist via mutation:
-  │   │   │   ├─ Create document in documents table (sourceType: "scraped")
+  │   │   ├─ Persist via internal.scraping.orchestration.persistScrapedPage:
+  │   │   │   ├─ Create document via internal.crud.documents.createFromScrape
   │   │   │   ├─ Mark crawlUrl as "done", set documentId
   │   │   │   └─ Insert newly discovered URLs (dedup via by_job_url index)
-  │   │   └─ On failure: mark crawlUrl as "failed", increment retryCount
-  │   └─ Update crawlJob stats via mutation
+  │   │   └─ On failure: internal.scraping.orchestration.markUrlFailed
+  │   └─ Update crawlJob stats via internal.scraping.orchestration.updateStats
   └─ END LOOP
         │
         ▼
-  onComplete callback (scraping.ts)
+  onComplete callback (scraping/orchestration.ts)
   ├─ Reset failed URLs with retryCount < max → "pending"
   ├─ If pending URLs remain and maxPages not reached → enqueue another batchScrape
   └─ Otherwise → mark crawlJob "completed" with final stats
@@ -416,11 +450,29 @@ User triggers "Import from URL"
 
 ### 4c. New Convex Files
 
+Following the established domain directory pattern (`generation/`, `retrieval/`, `experiments/`, `langsmith/`):
+
+```
+packages/backend/convex/scraping/
+├── orchestration.ts          # V8 runtime
+└── actions.ts                # "use node" runtime
+```
+
 | File | Runtime | Purpose |
 |------|---------|---------|
-| `convex/scraping.ts` | V8 | WorkPool setup, `startCrawl`/`cancelCrawl` mutations, crawl queries, `onComplete` callback |
-| `convex/scrapingActions.ts` | Node (`"use node"`) | `batchScrape` action — time-budgeted scraping loop calling eval-lib |
-| `convex/scrapingMutations.ts` | V8 | Internal mutations: `markUrlsScraping`, `persistScrapedPage`, `insertDiscoveredUrls`, `updateCrawlJobStats`, `markUrlFailed`; internal query: `getPendingUrls` |
+| `convex/scraping/orchestration.ts` | V8 | WorkPool setup, `startCrawl`/`cancelCrawl` public mutations, crawl queries (`getJob`, `listByKb`), `onComplete` callback, internal mutations (`markUrlsScraping`, `persistScrapedPage`, `insertDiscoveredUrls`, `updateStats`, `markUrlFailed`), internal query (`getPendingUrls`) |
+| `convex/scraping/actions.ts` | Node (`"use node"`) | `batchScrape` action — time-budgeted scraping loop calling eval-lib's `ContentScraper` and `filterLinks` |
+
+**Why 2 files instead of 3:** The `"use node"` constraint requires actions in separate files from mutations/queries. All V8 code (public mutations, internal mutations, queries, WorkPool callbacks) goes in `orchestration.ts`. This matches the pattern in `generation/orchestration.ts` and `experiments/orchestration.ts`, which also combine public + internal mutations/queries in a single file.
+
+**API paths** (Convex file-based routing):
+- `api.scraping.orchestration.startCrawl` — public mutation
+- `api.scraping.orchestration.cancelCrawl` — public mutation
+- `api.scraping.orchestration.getJob` — public query
+- `api.scraping.orchestration.listByKb` — public query
+- `internal.scraping.orchestration.persistScrapedPage` — internal mutation
+- `internal.scraping.orchestration.getPendingUrls` — internal query
+- `internal.scraping.actions.batchScrape` — internal action
 
 ### 4d. Reliability Guarantees
 
@@ -441,14 +493,16 @@ User triggers "Import from URL"
 
 ### 4f. File Upload Enhancement
 
-The existing `FileUploader` + `documents.ts` get extended:
+The existing `FileUploader` + `crud/documents.ts` get extended:
 
 - Accept `.pdf` and `.html` files (in addition to `.md`/`.txt`)
 - After upload to Convex storage, enqueue a file processing action:
   1. Read raw file from storage
-  2. Call eval-lib `processFile()` (HTML→MD or PDF→MD)
+  2. Call eval-lib `processFile()` (HTML→MD or PDF→MD) — import from `rag-evaluation-system/file-processing`
   3. Update document record with clean markdown content and `sourceType`
 - Original file remains in storage as `fileId`
+
+The processing action lives in `scraping/actions.ts` (or a new `convex/file-processing/actions.ts` if scraping scope creep is a concern). It must be a `"use node"` file since it imports from eval-lib's Node.js-dependent sub-paths.
 
 ---
 
@@ -458,7 +512,7 @@ The existing `FileUploader` + `documents.ts` get extended:
 
 ### 5a. Industry filter
 
-Add a `<select>` above the KB dropdown: "All Industries", "finance", "insurance", etc. Uses `api.knowledgeBases.listByIndustry` query with the selected industry as filter.
+Add a `<select>` above the KB dropdown: "All Industries", "finance", "insurance", etc. Uses `api.crud.knowledgeBases.listByIndustry` query with the selected industry as filter.
 
 ### 5b. Enhanced create form
 
@@ -467,13 +521,15 @@ Collapsible "Advanced" section when creating a new KB:
 - Company name text input
 - Entity type dropdown
 
+Uses `api.crud.knowledgeBases.create` mutation (already wired).
+
 ### 5c. Import from URL
 
 New section below the KB document list:
 - Text input for URL
-- "Start Crawl" button (calls `startCrawl` mutation)
-- Progress display: "Scraping... 45/120 pages" (reactive query on `crawlJobs`)
-- Cancel button
+- "Start Crawl" button (calls `api.scraping.orchestration.startCrawl` mutation)
+- Progress display: "Scraping... 45/120 pages" (reactive query on `api.scraping.orchestration.getJob`)
+- Cancel button (calls `api.scraping.orchestration.cancelCrawl`)
 
 ### 5d. Enhanced FileUploader
 
@@ -501,26 +557,40 @@ Phases 2 and 3 can be parallelized (both eval-lib only, no backend dependency be
 
 ## Files Summary
 
-| Action | File | Package |
-|--------|------|---------|
-| Modify | `convex/schema.ts` | backend |
-| Modify | `convex/knowledgeBases.ts` | backend |
-| Modify | `convex/convex.config.ts` | backend |
-| Modify | `src/index.ts` | eval-lib |
-| Modify | `src/components/KBSelector.tsx` | frontend |
-| Modify | `src/components/FileUploader.tsx` | frontend |
-| Create | `src/file-processing/processor.ts` | eval-lib |
-| Create | `src/file-processing/html-to-markdown.ts` | eval-lib |
-| Create | `src/file-processing/pdf-to-markdown.ts` | eval-lib |
-| Create | `src/file-processing/index.ts` | eval-lib |
-| Create | `src/scraper/types.ts` | eval-lib |
-| Create | `src/scraper/scraper.ts` | eval-lib |
-| Create | `src/scraper/link-extractor.ts` | eval-lib |
-| Create | `src/scraper/seed-companies.ts` | eval-lib |
-| Create | `src/scraper/index.ts` | eval-lib |
-| Create | `convex/scraping.ts` | backend |
-| Create | `convex/scrapingActions.ts` | backend |
-| Create | `convex/scrapingMutations.ts` | backend |
+### Backend (`packages/backend/`)
+
+| Action | File | Notes |
+|--------|------|-------|
+| Modify | `convex/schema.ts` | Add KB metadata fields, make `fileId` optional, add source tracking, new `crawlJobs` + `crawlUrls` tables |
+| Modify | `convex/crud/knowledgeBases.ts` | Add optional metadata args to `create`, add `listByIndustry` query |
+| Modify | `convex/crud/documents.ts` | Add `createFromScrape` internal mutation (no file upload) |
+| Modify | `convex/convex.config.ts` | Add `scrapingPool` WorkPool |
+| Modify | `convex.json` | Add file-processing + scraper deps to `externalPackages` |
+| Create | `convex/scraping/orchestration.ts` | WorkPool setup, mutations, queries, callbacks |
+| Create | `convex/scraping/actions.ts` | `"use node"` — batchScrape action |
+
+### eval-lib (`packages/eval-lib/`)
+
+| Action | File | Notes |
+|--------|------|-------|
+| Modify | `package.json` | Add new dependencies, add sub-path exports for `./file-processing` and `./scraper` |
+| Modify | `tsup.config.ts` | Add entry points for new sub-paths |
+| Create | `src/file-processing/processor.ts` | Core types + dispatcher |
+| Create | `src/file-processing/html-to-markdown.ts` | HTML → Markdown conversion |
+| Create | `src/file-processing/pdf-to-markdown.ts` | PDF → Markdown conversion |
+| Create | `src/file-processing/index.ts` | Barrel export |
+| Create | `src/scraper/types.ts` | ScrapedPage, ScrapeOptions, SeedEntity |
+| Create | `src/scraper/scraper.ts` | ContentScraper class |
+| Create | `src/scraper/link-extractor.ts` | filterLinks, normalizeUrl |
+| Create | `src/scraper/seed-companies.ts` | 28 seed entities |
+| Create | `src/scraper/index.ts` | Barrel export |
+
+### Frontend (`packages/frontend/`)
+
+| Action | File | Notes |
+|--------|------|-------|
+| Modify | `src/components/KBSelector.tsx` | Industry filter, enhanced create form |
+| Modify | `src/components/FileUploader.tsx` | Accept PDF/HTML, conversion progress |
 
 ### New Dependencies
 
@@ -534,15 +604,45 @@ got-scraping            — HTTP client with browser-like headers/TLS fingerprin
 ```
 
 **backend** (`packages/backend/package.json`):
-No new dependencies. Uses eval-lib's scraper via workspace dependency.
+No new package.json dependencies. Uses eval-lib's scraper/file-processing via workspace dependency.
+
+**backend** (`packages/backend/convex.json` `externalPackages`):
+Add to the existing list (`langsmith`, `@langchain/core`, `openai`, `minisearch`):
+```
+@mozilla/readability
+jsdom
+turndown
+unpdf
+got-scraping
+```
+
+These must be in `externalPackages` because the scraping action (`"use node"`) imports from eval-lib sub-paths that transitively depend on them. Same mechanism that keeps `langsmith` and `openai` external today.
+
+---
+
+## Sub-path Isolation
+
+The new eval-lib modules follow the same sub-path isolation rules established during the backend refactor for `langsmith/`, `llm/`, and `shared/`:
+
+| Sub-path | Has Node.js deps? | Can import from |
+|---|---|---|
+| `rag-evaluation-system/file-processing` | Yes (jsdom, readability, turndown, unpdf) | `"use node"` action files only |
+| `rag-evaluation-system/scraper` | Yes (got-scraping, imports file-processing) | `"use node"` action files only |
+| `rag-evaluation-system/shared` | No | Any file |
+
+**Why this matters:** Convex runs mutations and queries in a V8 isolate (no Node.js). The `externalPackages` mechanism only applies to `"use node"` action bundles. Importing a Node.js-dependent sub-path from a mutation/query file would cause a bundling error.
+
+The root barrel (`src/index.ts`) must NOT re-export from `./file-processing/` or `./scraper/`. The `./shared` sub-path (types, constants) remains safe for any file.
 
 ---
 
 ## Verification
 
-1. **Schema**: `pnpm -C packages/backend npx convex dev --once` — deploys schema, confirms no validation errors
+1. **Schema**: `cd packages/backend && npx convex dev --once` — deploys schema, confirms no validation errors
 2. **Eval-lib build**: `pnpm build` — confirms file processor and scraper compile and export correctly
-3. **Unit tests**: `pnpm test` — new tests for file processing (HTML→MD, PDF→MD) and scraper (link filtering, URL normalization)
-4. **Crawl test**: Trigger a small crawl (5-10 pages) from the frontend and verify documents appear in the KB
+3. **Sub-path exports**: verify `rag-evaluation-system/file-processing` and `rag-evaluation-system/scraper` resolve
+4. **Unit tests**: `pnpm -C packages/eval-lib test` — new tests for file processing (HTML→MD, PDF→MD) and scraper (link filtering, URL normalization)
 5. **TypeScript**: `pnpm typecheck` and `pnpm typecheck:backend` — no type errors
-6. **Existing tests**: `pnpm test` — all existing tests still pass (no breaking changes)
+6. **Backend tests**: `pnpm -C packages/backend test` — existing tests still pass
+7. **Crawl test**: Trigger a small crawl (5-10 pages) from the frontend and verify documents appear in the KB
+8. **Frontend build**: `pnpm -C packages/frontend build` — verifies all `api.*` paths are valid
