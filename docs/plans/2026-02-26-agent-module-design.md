@@ -20,9 +20,9 @@ A conversational Q&A agent that connects to the existing retrieval system via th
 
 #### Component setup
 
-`convex.config.ts` registers the `@convex-dev/agent` component. The component manages its own tables (threads, messages, streamDeltas, etc.) within a component namespace.
+`convex.config.ts` registers the `@convex-dev/agent` component alongside three WorkPool instances (`indexingPool`, `generationPool`, `experimentPool`). The agent component manages its own tables (threads, messages, streamDeltas, etc.) within a component namespace.
 
-#### Agent definition (`agent/qaAgent.ts`)
+#### Agent definition (`agent/agentActions.ts`)
 
 A QA agent created dynamically per request with:
 - Model: `openai.chat("gpt-4o-mini")` via `@ai-sdk/openai`
@@ -40,15 +40,16 @@ Tools are created at action runtime (not at agent definition time) because each 
 - **Args**: `z.object({ query: z.string(), topK: z.number().default(10) })`
 - **Description**: Dynamic — `"Search the '{kbName}' knowledge base for relevant information"`
 - **Handler**:
-  1. Constructs a `CallbackRetriever` from eval-lib with `retrieveFn` that:
-     - Embeds the query using OpenAI embeddings
+  1. Embeds the query using `createEmbedder()` from `rag-evaluation-system/llm`
+  2. Constructs a `CallbackRetriever` from eval-lib with `retrieveFn` that:
      - Runs `ctx.vectorSearch` on `documentChunks` filtered by `kbId`
-     - Hydrates chunks via `fetchChunksWithDocs` internal query
-  2. If `retrieverConfig` (PipelineConfig) is provided, wraps in a `PipelineRetriever` with BM25, reranking, etc.
-  3. Calls `retriever.retrieve(query, topK)`
-  4. Returns `PositionAwareChunk[]` formatted for the LLM: `{ chunks: [{ content, docTitle, docId, start, end }] }`
+     - Hydrates chunks via `internal.retrieval.chunks.fetchChunksWithDocs`
+     - Post-filters by `indexConfigHash` if provided, takes top-K
+  3. If `retrieverConfig` (PipelineConfig) is provided, wraps in a `PipelineRetriever` with BM25, reranking, etc.
+  4. Calls `retriever.retrieve(query, topK)`
+  5. Returns `PositionAwareChunk[]` formatted for the LLM: `{ chunks: [{ content, docTitle, docId, start, end }] }`
 
-This is the same pattern used in `experimentActions.ts` — single source of truth for retrieval logic.
+This follows the same retrieval pattern used in `experiments/actions.ts` and `retrieval/retrieverActions.ts`, which share the `vectorSearchWithFilter` helper in `lib/vectorSearch.ts`.
 
 #### Thread management (`agent/threads.ts`)
 
@@ -56,7 +57,7 @@ Mutations and queries for thread lifecycle:
 
 - `createThread` mutation: Creates agent thread (via `createThread` from `@convex-dev/agent`) + stores KB config in `agentThreadConfigs` table
 - `sendMessage` mutation: Saves user message to thread, schedules `streamResponse` action via `ctx.scheduler.runAfter(0, ...)`
-- `streamResponse` internal action: Reads thread config, creates dynamic tools, calls `agent.streamText()` with `saveStreamDeltas: true`
+- `streamResponse` internal action (in `agent/agentActions.ts`): Reads thread config, creates dynamic tools, calls `agent.streamText()` with `saveStreamDeltas: true`
 - `listMessages` query: Paginated messages via `listUIMessages` + `syncStreams` for streaming support
 - `listThreads` query: User's threads with title and last activity
 
@@ -67,13 +68,14 @@ agentThreadConfigs: defineTable({
   threadId: v.string(),
   orgId: v.string(),
   userId: v.string(),
+  title: v.optional(v.string()),
   kbConfigs: v.array(v.object({
     kbId: v.id("knowledgeBases"),
     retrieverConfig: v.optional(v.any()),
   })),
   createdAt: v.number(),
 }).index("by_thread", ["threadId"])
-  .index("by_user", ["userId", "orgId"])
+  .index("by_user_org", ["userId", "orgId"])
 ```
 
 No changes to existing tables.
@@ -96,7 +98,7 @@ Three-area layout:
 **`ThreadList.tsx`**: Lists user's threads (title, last message preview, timestamp). "New Chat" triggers KB selection dialog.
 
 **`NewThreadDialog.tsx`**: Modal for creating a thread:
-- Multi-select list of org's KBs
+- Multi-select list of org's KBs (via `api.crud.knowledgeBases.list`)
 - Optional retriever pipeline config per KB (reuse patterns from experiments page, or use defaults)
 - "Start Chat" button
 
@@ -122,14 +124,14 @@ Dark theme consistent with existing app: Tailwind CSS v4, JetBrains Mono, accent
 ```
 User types question
   → sendMessage mutation (saves message, schedules action)
-    → streamResponse action
+    → streamResponse action (agent/agentActions.ts)
       → Read agentThreadConfigs for this thread
       → For each KB: createKBRetrieverTool(kbId, name, config)
       → Create Agent with those tools
       → agent.streamText(ctx, { threadId }, { promptMessageId })
         → Agent decides which KB(s) to search
         → Tool handler: CallbackRetriever.retrieve(query, topK)
-          → Embed query → vectorSearch → hydrate chunks
+          → createEmbedder (rag-evaluation-system/llm) → vectorSearch → internal.retrieval.chunks.fetchChunksWithDocs
         → Agent receives chunks, synthesizes answer
         → All messages saved to agent component (tool calls, results, answer)
     → Frontend receives streaming updates via useUIMessages
@@ -148,6 +150,8 @@ New:
 Existing (already available):
 - `openai` — For embeddings in tool handler
 - `rag-evaluation-system` — CallbackRetriever, PipelineRetriever
+- `rag-evaluation-system/llm` — `createEmbedder()` (single shared copy, replaces local duplicates)
+- `rag-evaluation-system/shared` — Shared types and constants
 
 ### Frontend (packages/frontend)
 
@@ -160,10 +164,11 @@ Add `@ai-sdk/openai` and `ai` to `externalPackages` list (alongside existing `la
 
 ## What stays unchanged
 
-- Existing experiment execution flow
-- Existing question generation flow
+- Existing experiment execution flow (in `experiments/` directory)
+- Existing question generation flow (in `generation/` directory)
 - Existing schema tables (documentChunks, knowledgeBases, documents, etc.)
-- eval-lib library code (consumed as-is via CallbackRetriever/PipelineRetriever)
+- Existing retrieval/indexing pipeline (in `retrieval/` directory)
+- eval-lib library code (consumed as-is via CallbackRetriever/PipelineRetriever and sub-path modules)
 
 ## Scope boundaries
 

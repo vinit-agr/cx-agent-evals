@@ -67,6 +67,8 @@ import workpool from "@convex-dev/workpool/convex.config";
 
 const app = defineApp();
 app.use(workpool, { name: "indexingPool" });
+app.use(workpool, { name: "generationPool" });
+app.use(workpool, { name: "experimentPool" });
 
 export default app;
 ```
@@ -79,6 +81,8 @@ import agent from "@convex-dev/agent/convex.config";
 
 const app = defineApp();
 app.use(workpool, { name: "indexingPool" });
+app.use(workpool, { name: "generationPool" });
+app.use(workpool, { name: "experimentPool" });
 app.use(agent);
 
 export default app;
@@ -129,7 +133,7 @@ git commit -m "feat(agent): register agent component and add agentThreadConfigs 
 **Files:**
 - Create: `packages/backend/convex/agent/retrieverTool.ts`
 
-This is a `"use node"` file (uses OpenAI API for embeddings). It exports a factory function that creates a `createTool` instance for a given KB.
+This is a `"use node"` file. It exports a factory function that creates a `createTool` instance for a given KB. Uses `createEmbedder` from `rag-evaluation-system/llm` (the single shared copy) for embeddings, and calls `internal.retrieval.chunks.fetchChunksWithDocs` for chunk hydration.
 
 **Step 1: Create the retriever tool factory**
 
@@ -142,23 +146,13 @@ import { createTool } from "@convex-dev/agent";
 import { z } from "zod";
 import {
   CallbackRetriever,
-  OpenAIEmbedder,
   DocumentId,
   PositionAwareChunkId,
   type PositionAwareChunk,
 } from "rag-evaluation-system";
-import OpenAI from "openai";
+import { createEmbedder } from "rag-evaluation-system/llm";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-
-function createEmbedder(model?: string) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) throw new Error("OPENAI_API_KEY not set");
-  return new OpenAIEmbedder({
-    model: model ?? "text-embedding-3-small",
-    client: new OpenAI({ apiKey }),
-  });
-}
 
 interface KBToolConfig {
   kbId: Id<"knowledgeBases">;
@@ -196,7 +190,7 @@ export function createKBRetrieverTool(config: KBToolConfig) {
           );
 
           const chunks = await ctx.runQuery(
-            internal.rag.fetchChunksWithDocs,
+            internal.retrieval.chunks.fetchChunksWithDocs,
             { ids: searchResults.map((r: any) => r._id) },
           );
 
@@ -529,7 +523,7 @@ In `packages/frontend/src/components/Header.tsx`, update the `HeaderProps` inter
 
 Change the interface (line 8):
 ```ts
-  mode?: "generate" | "experiments" | "agent";
+  mode?: "generate" | "retrievers" | "experiments" | "agent";
 ```
 
 Add the Agent link after the Experiments link (after line 45), inside the same `<div className="flex gap-1 ...">`:
@@ -670,7 +664,7 @@ function NewThreadDialog({
   onClose: () => void;
   onCreated: (threadId: string) => void;
 }) {
-  const knowledgeBases = useQuery(api.knowledgeBases.list);
+  const knowledgeBases = useQuery(api.crud.knowledgeBases.list);
   const createThread = useMutation(api.agent.threads.createThread);
   const [selectedKBs, setSelectedKBs] = useState<Set<Id<"knowledgeBases">>>(
     new Set(),
@@ -794,7 +788,7 @@ function ChatView({ threadId }: { threadId: string }) {
 }
 
 function KBBadge({ kbId }: { kbId: Id<"knowledgeBases"> }) {
-  const kb = useQuery(api.knowledgeBases.get, { id: kbId });
+  const kb = useQuery(api.crud.knowledgeBases.get, { id: kbId });
   return (
     <span className="px-2 py-0.5 text-[10px] font-medium bg-accent/10 text-accent rounded">
       {kb?.name ?? "..."}
@@ -1118,7 +1112,7 @@ git commit -m "chore(agent): final cleanup for agent module"
 - `packages/frontend/src/components/Header.tsx` — Add Agent nav link
 
 ### Unchanged:
-- All eval-lib code
-- All existing backend functions
+- All eval-lib code (sub-path modules: `/langsmith`, `/llm`, `/shared` consumed as dependencies)
+- All existing backend functions (in `crud/`, `generation/`, `retrieval/`, `experiments/`, `langsmith/` directories)
 - All existing frontend pages
 - All existing schema tables
