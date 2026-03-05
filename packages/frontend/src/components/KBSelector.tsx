@@ -11,8 +11,28 @@ interface KBSelectorProps {
   onSelect: (kbId: Id<"knowledgeBases">) => void;
 }
 
+const INDUSTRIES = [
+  "finance",
+  "insurance",
+  "healthcare",
+  "telecom",
+  "education",
+  "government",
+] as const;
+
+const ENTITY_TYPES = [
+  "company",
+  "government-state",
+  "government-county",
+  "industry-aggregate",
+] as const;
+
 export function KBSelector({ selectedKbId, onSelect }: KBSelectorProps) {
-  const kbs = useQuery(api.crud.knowledgeBases.list);
+  const [industryFilter, setIndustryFilter] = useState<string>("");
+  const kbs = useQuery(
+    api.crud.knowledgeBases.listByIndustry,
+    industryFilter ? { industry: industryFilter } : {},
+  );
   const documents = useQuery(
     api.crud.documents.listByKb,
     selectedKbId ? { kbId: selectedKbId } : "skip",
@@ -20,15 +40,26 @@ export function KBSelector({ selectedKbId, onSelect }: KBSelectorProps) {
   const createKb = useMutation(api.crud.knowledgeBases.create);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
+  const [newIndustry, setNewIndustry] = useState("");
+  const [newCompany, setNewCompany] = useState("");
+  const [newEntityType, setNewEntityType] = useState("");
   const [creating, setCreating] = useState(false);
 
   async function handleCreate() {
     if (!newName.trim() || creating) return;
     setCreating(true);
     try {
-      const id = await createKb({ name: newName.trim() });
+      const id = await createKb({
+        name: newName.trim(),
+        ...(newIndustry && { industry: newIndustry }),
+        ...(newCompany.trim() && { company: newCompany.trim() }),
+        ...(newEntityType && { entityType: newEntityType }),
+      });
       onSelect(id);
       setNewName("");
+      setNewIndustry("");
+      setNewCompany("");
+      setNewEntityType("");
       setShowCreate(false);
     } finally {
       setCreating(false);
@@ -37,6 +68,24 @@ export function KBSelector({ selectedKbId, onSelect }: KBSelectorProps) {
 
   return (
     <div className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-xs text-text-muted uppercase tracking-wide">
+          Industry Filter
+        </label>
+        <select
+          value={industryFilter}
+          onChange={(e) => setIndustryFilter(e.target.value)}
+          className="w-full bg-bg-elevated border border-border rounded px-3 py-2 text-sm text-text focus:border-accent focus:ring-1 focus:ring-accent/50 outline-none"
+        >
+          <option value="">All Industries</option>
+          {INDUSTRIES.map((ind) => (
+            <option key={ind} value={ind}>
+              {ind.charAt(0).toUpperCase() + ind.slice(1)}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className="space-y-2">
         <label className="text-xs text-text-muted uppercase tracking-wide">
           Knowledge Base
@@ -86,6 +135,37 @@ export function KBSelector({ selectedKbId, onSelect }: KBSelectorProps) {
             className="w-full bg-bg border border-border rounded px-2 py-1 text-sm text-text focus:border-accent outline-none"
             onKeyDown={(e) => e.key === "Enter" && handleCreate()}
           />
+          <select
+            value={newIndustry}
+            onChange={(e) => setNewIndustry(e.target.value)}
+            className="w-full bg-bg border border-border rounded px-2 py-1 text-sm text-text-dim focus:border-accent outline-none"
+          >
+            <option value="">Industry (optional)</option>
+            {INDUSTRIES.map((ind) => (
+              <option key={ind} value={ind}>
+                {ind.charAt(0).toUpperCase() + ind.slice(1)}
+              </option>
+            ))}
+          </select>
+          <input
+            type="text"
+            value={newCompany}
+            onChange={(e) => setNewCompany(e.target.value)}
+            placeholder="Company (optional)"
+            className="w-full bg-bg border border-border rounded px-2 py-1 text-sm text-text focus:border-accent outline-none"
+          />
+          <select
+            value={newEntityType}
+            onChange={(e) => setNewEntityType(e.target.value)}
+            className="w-full bg-bg border border-border rounded px-2 py-1 text-sm text-text-dim focus:border-accent outline-none"
+          >
+            <option value="">Entity type (optional)</option>
+            {ENTITY_TYPES.map((et) => (
+              <option key={et} value={et}>
+                {et}
+              </option>
+            ))}
+          </select>
           <div className="flex gap-2">
             <button
               onClick={handleCreate}
