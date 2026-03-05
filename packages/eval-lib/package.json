@@ -43,6 +43,10 @@
     "./file-processing": {
       "types": "./dist/file-processing/index.d.ts",
       "import": "./dist/file-processing/index.js"
+    },
+    "./scraper": {
+      "types": "./dist/scraper/index.d.ts",
+      "import": "./dist/scraper/index.js"
     }
   },
   "files": [

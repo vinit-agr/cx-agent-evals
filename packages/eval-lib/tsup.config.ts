@@ -11,6 +11,7 @@ export default defineConfig({
     "src/llm/index.ts",
     "src/shared/index.ts",
     "src/file-processing/index.ts",
+    "src/scraper/index.ts",
   ],
   format: ["esm", "cjs"],
   dts: true,
@@ -29,5 +30,6 @@ export default defineConfig({
     "jsdom",
     "turndown",
     "unpdf",
+    "got-scraping",
   ],
 });
