@@ -156,6 +156,7 @@ export default defineSchema({
   // ─── Experiments (evaluation runs against a dataset) ───
   experiments: defineTable({
     orgId: v.string(),
+    kbId: v.optional(v.id("knowledgeBases")),
     datasetId: v.id("datasets"),
     name: v.string(),
     retrieverId: v.optional(v.id("retrievers")),
@@ -199,7 +200,8 @@ export default defineSchema({
   })
     .index("by_org", ["orgId"])
     .index("by_dataset", ["datasetId"])
-    .index("by_retriever", ["retrieverId"]),
+    .index("by_retriever", ["retrieverId"])
+    .index("by_kb", ["kbId"]),
 
   // ─── Experiment Results (per-question evaluation results) ───
   experimentResults: defineTable({
