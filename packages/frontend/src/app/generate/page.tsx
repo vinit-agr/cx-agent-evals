@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { Suspense, useState, useEffect } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
+import { useKbFromUrl } from "@/lib/useKbFromUrl";
 import { KBSelector } from "@/components/KBSelector";
 import { GenerateConfig, GenerateSettings } from "@/components/GenerateConfig";
 import { QuestionList } from "@/components/QuestionList";
@@ -14,8 +15,16 @@ import { RealWorldQuestionsModal } from "@/components/RealWorldQuestionsModal";
 import { StrategyType, Dimension, DocumentInfo, GeneratedQuestion } from "@/lib/types";
 
 export default function GeneratePage() {
+  return (
+    <Suspense fallback={<div className="flex flex-col h-screen"><Header mode="generate" /></div>}>
+      <GeneratePageContent />
+    </Suspense>
+  );
+}
+
+function GeneratePageContent() {
   // KB selection
-  const [selectedKbId, setSelectedKbId] = useState<Id<"knowledgeBases"> | null>(null);
+  const [selectedKbId, setSelectedKbId] = useKbFromUrl();
 
   // Generation tracking
   const [datasetId, setDatasetId] = useState<Id<"datasets"> | null>(null);
@@ -218,7 +227,7 @@ export default function GeneratePage() {
 
   return (
     <div className="flex flex-col h-screen">
-      <Header mode="generate" onReset={handleReset} />
+      <Header mode="generate" kbId={selectedKbId} onReset={handleReset} />
 
       <div className="flex flex-1 overflow-hidden max-w-full">
         {/* Left sidebar: KB selector + config */}
