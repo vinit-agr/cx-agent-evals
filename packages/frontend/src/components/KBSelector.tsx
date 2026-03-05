@@ -45,6 +45,32 @@ export function KBSelector({ selectedKbId, onSelect }: KBSelectorProps) {
   const [newEntityType, setNewEntityType] = useState("");
   const [creating, setCreating] = useState(false);
 
+  // Crawl import state
+  const [crawlUrl, setCrawlUrl] = useState("");
+  const [crawlJobId, setCrawlJobId] = useState<Id<"crawlJobs"> | null>(null);
+  const [crawling, setCrawling] = useState(false);
+  const startCrawl = useMutation(api.scraping.orchestration.startCrawl);
+  const cancelCrawl = useMutation(api.scraping.orchestration.cancelCrawl);
+  const crawlJob = useQuery(
+    api.scraping.orchestration.getJob,
+    crawlJobId ? { jobId: crawlJobId } : "skip",
+  );
+
+  async function handleStartCrawl() {
+    if (!crawlUrl.trim() || !selectedKbId || crawling) return;
+    setCrawling(true);
+    try {
+      const jobId = await startCrawl({
+        kbId: selectedKbId,
+        startUrl: crawlUrl.trim(),
+      });
+      setCrawlJobId(jobId);
+      setCrawlUrl("");
+    } finally {
+      setCrawling(false);
+    }
+  }
+
   async function handleCreate() {
     if (!newName.trim() || creating) return;
     setCreating(true);
@@ -188,6 +214,61 @@ export function KBSelector({ selectedKbId, onSelect }: KBSelectorProps) {
         <div className="space-y-3">
           <FileUploader kbId={selectedKbId} />
 
+          <div className="space-y-2">
+            <label className="text-xs text-text-muted uppercase tracking-wide">
+              Import from URL
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="url"
+                value={crawlUrl}
+                onChange={(e) => setCrawlUrl(e.target.value)}
+                placeholder="https://example.com/support"
+                className="flex-1 bg-bg border border-border rounded px-2 py-1 text-sm text-text focus:border-accent outline-none"
+                disabled={crawling}
+              />
+              <button
+                onClick={handleStartCrawl}
+                disabled={!crawlUrl.trim() || crawling}
+                className="px-3 py-1 text-xs bg-accent text-bg-elevated rounded hover:bg-accent/90 disabled:opacity-50 transition-colors"
+              >
+                {crawling ? "Starting..." : "Start Crawl"}
+              </button>
+            </div>
+            {crawlJob && (
+              <div className="border border-border rounded bg-bg-elevated p-2 space-y-1 text-xs">
+                {crawlJob.status === "running" && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-text-dim">
+                      Scraping... {crawlJob.stats.scraped}/{crawlJob.stats.discovered} pages
+                    </span>
+                    <button
+                      onClick={() => cancelCrawl({ jobId: crawlJobId! })}
+                      className="text-red-400 hover:text-red-300 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+                {crawlJob.status === "completed" && (
+                  <span className="text-accent">
+                    Completed: {crawlJob.stats.scraped} pages scraped
+                  </span>
+                )}
+                {crawlJob.status === "failed" && (
+                  <span className="text-red-400">
+                    Failed: {crawlJob.error || "Unknown error"}
+                  </span>
+                )}
+                {crawlJob.status === "cancelled" && (
+                  <span className="text-text-dim">
+                    Cancelled: {crawlJob.stats.scraped} pages scraped
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
           {documents === undefined ? (
             <div className="flex items-center gap-2 text-text-dim text-xs">
               <div className="w-3 h-3 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
@@ -214,7 +295,7 @@ export function KBSelector({ selectedKbId, onSelect }: KBSelectorProps) {
             </div>
           ) : (
             <p className="text-xs text-text-dim">
-              No documents yet. Upload .md files above.
+              No documents yet. Upload files or import from URL above.
             </p>
           )}
         </div>
