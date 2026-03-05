@@ -50,6 +50,38 @@ function GeneratePageContent() {
 
   const startGeneration = useMutation(api.generation.orchestration.startGeneration);
 
+  // Datasets for selected KB
+  const kbDatasets = useQuery(
+    api.crud.datasets.byKb,
+    selectedKbId ? { kbId: selectedKbId } : "skip",
+  );
+
+  // Mode: "browse" (viewing existing datasets) or "generate" (creating new)
+  type PageMode = "browse" | "generate";
+  const [mode, setMode] = useState<PageMode>("browse");
+
+  // Selected dataset for browsing
+  const [browseDatasetId, setBrowseDatasetId] = useState<Id<"datasets"> | null>(null);
+
+  // Questions for browsed dataset
+  const browseQuestions = useQuery(
+    api.crud.questions.byDataset,
+    browseDatasetId ? { datasetId: browseDatasetId } : "skip",
+  );
+
+  // Auto-switch to generate mode when no datasets exist
+  useEffect(() => {
+    if (kbDatasets !== undefined && kbDatasets.length === 0) {
+      setMode("generate");
+    }
+  }, [kbDatasets]);
+
+  // Reset browse selection when KB changes
+  useEffect(() => {
+    setBrowseDatasetId(null);
+    setMode(kbDatasets && kbDatasets.length > 0 ? "browse" : "generate");
+  }, [selectedKbId]);
+
   // UI state
   const [selectedQuestion, setSelectedQuestion] = useState<number | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
@@ -125,6 +157,10 @@ function GeneratePageContent() {
     setSelectedQuestion(null);
     setGenError(null);
     setSelectedDocId(null);
+    setBrowseDatasetId(null);
+    if (kbDatasets && kbDatasets.length > 0) {
+      setMode("browse");
+    }
   }
 
   function handleOpenWizard() {
@@ -194,8 +230,32 @@ function GeneratePageContent() {
     }
   }
 
+  // Phase status from generation job
+  const phaseStatus = job?.phase
+    ? `${job.phase}... (${job.processedItems}/${job.totalItems})`
+    : null;
+  const totalDone = job?.status === "completed" || job?.status === "completed_with_errors"
+    ? (questions.length || null)
+    : null;
+
+  // Resolve which questions + state to display based on mode
+  const displayQuestions: GeneratedQuestion[] =
+    mode === "browse"
+      ? (browseQuestions ?? []).map((q) => ({
+          docId: q.sourceDocId,
+          query: q.queryText,
+          relevantSpans: q.relevantSpans,
+        }))
+      : questions;
+
+  const displayGenerating = mode === "generate" && generating;
+  const displayTotalDone = mode === "browse"
+    ? browseQuestions?.length ?? null
+    : totalDone;
+  const displayPhaseStatus = mode === "generate" ? phaseStatus : null;
+
   // When a question is selected, load its source document
-  const selectedQ = selectedQuestion !== null ? questions[selectedQuestion] : null;
+  const selectedQ = selectedQuestion !== null ? displayQuestions[selectedQuestion] : null;
   useEffect(() => {
     if (selectedQ && documentsData) {
       const doc = documentsData.find((d) => d.docId === selectedQ.docId);
@@ -214,16 +274,19 @@ function GeneratePageContent() {
       }
     : null;
 
-  // Phase status from generation job
-  const phaseStatus = job?.phase
-    ? `${job.phase}... (${job.processedItems}/${job.totalItems})`
-    : null;
-  const totalDone = job?.status === "completed" || job?.status === "completed_with_errors"
-    ? (questions.length || null)
-    : null;
+  // When generation completes, switch to browsing the new dataset
+  useEffect(() => {
+    if (
+      mode === "generate" &&
+      datasetId &&
+      (job?.status === "completed" || job?.status === "completed_with_errors")
+    ) {
+      setMode("browse");
+      setBrowseDatasetId(datasetId);
+    }
+  }, [job?.status, datasetId, mode]);
 
   const hasDocuments = (documentsData ?? []).length > 0;
-  const hasQuestions = questions.length > 0;
 
   return (
     <div className="flex flex-col h-screen">
@@ -235,7 +298,59 @@ function GeneratePageContent() {
           <div className="p-4 space-y-6">
             <KBSelector selectedKbId={selectedKbId} onSelect={setSelectedKbId} />
 
-            {hasDocuments && (
+            {/* Dataset section — appears after KB selected */}
+            {selectedKbId && kbDatasets !== undefined && (
+              <div className="pt-2 border-t border-border">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs text-text-muted uppercase tracking-wide">
+                    Datasets ({kbDatasets.length})
+                  </span>
+                  {kbDatasets.length > 0 && (
+                    <button
+                      onClick={() => {
+                        if (mode === "generate") {
+                          setMode("browse");
+                        } else {
+                          setMode("generate");
+                          setBrowseDatasetId(null);
+                        }
+                      }}
+                      className="text-[11px] text-accent hover:text-accent/80 transition-colors"
+                    >
+                      {mode === "generate" ? "View Datasets" : "+ New Dataset"}
+                    </button>
+                  )}
+                </div>
+
+                {mode === "browse" && kbDatasets.length > 0 && (
+                  <div className="space-y-1 max-h-64 overflow-y-auto">
+                    {kbDatasets.map((ds) => (
+                      <button
+                        key={ds._id}
+                        onClick={() => {
+                          setBrowseDatasetId(ds._id);
+                          setSelectedQuestion(null);
+                          setSelectedDocId(null);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded text-xs transition-colors ${
+                          browseDatasetId === ds._id
+                            ? "bg-accent/10 border border-accent/30 text-text"
+                            : "hover:bg-bg-hover border border-transparent text-text-muted"
+                        }`}
+                      >
+                        <div className="font-medium truncate">{ds.name}</div>
+                        <div className="flex gap-2 text-[10px] text-text-dim mt-0.5">
+                          <span>{ds.questionCount} questions</span>
+                          <span>{ds.strategy}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {hasDocuments && mode === "generate" && (
               <div className="pt-2 border-t border-border">
                 <GenerateConfig
                   settings={settings}
@@ -271,15 +386,15 @@ function GeneratePageContent() {
         </div>
 
         {/* Center: question list */}
-        {(hasQuestions || generating) && (
+        {(displayQuestions.length > 0 || displayGenerating) && (
           <div className="w-80 flex-shrink-0 border-r border-border bg-bg">
             <QuestionList
-              questions={questions}
+              questions={displayQuestions}
               selectedIndex={selectedQuestion}
               onSelect={setSelectedQuestion}
-              generating={generating}
-              totalDone={totalDone}
-              phaseStatus={phaseStatus}
+              generating={displayGenerating}
+              totalDone={displayTotalDone}
+              phaseStatus={displayPhaseStatus}
             />
           </div>
         )}
