@@ -39,6 +39,10 @@
     "./shared": {
       "types": "./dist/shared/index.d.ts",
       "import": "./dist/shared/index.js"
+    },
+    "./file-processing": {
+      "types": "./dist/file-processing/index.d.ts",
+      "import": "./dist/file-processing/index.js"
     }
   },
   "files": [

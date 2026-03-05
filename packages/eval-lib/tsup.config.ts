@@ -10,6 +10,7 @@ export default defineConfig({
     "src/langsmith/index.ts",
     "src/llm/index.ts",
     "src/shared/index.ts",
+    "src/file-processing/index.ts",
   ],
   format: ["esm", "cjs"],
   dts: true,
@@ -24,5 +25,9 @@ export default defineConfig({
     "langsmith/evaluation",
     "@langchain/core",
     "cohere-ai",
+    "@mozilla/readability",
+    "jsdom",
+    "turndown",
+    "unpdf",
   ],
 });

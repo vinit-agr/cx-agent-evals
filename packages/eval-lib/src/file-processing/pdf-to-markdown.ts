@@ -6,12 +6,14 @@ export interface PdfToMarkdownResult {
 }
 
 export async function pdfToMarkdown(buffer: Buffer): Promise<PdfToMarkdownResult> {
-  const { text, totalPages } = await extractText(new Uint8Array(buffer));
+  const { text, totalPages } = await extractText(new Uint8Array(buffer), {
+    mergePages: true,
+  });
   let markdown = text
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]+$/gm, "")
     .trim();
-  const firstLine = markdown.split("\n").find((l) => l.trim().length > 0);
+  const firstLine = markdown.split("\n").find((l: string) => l.trim().length > 0);
   const title = firstLine?.trim() || `PDF Document (${totalPages} pages)`;
   return { content: markdown, title };
 }

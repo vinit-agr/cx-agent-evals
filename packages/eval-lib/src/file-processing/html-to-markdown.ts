@@ -20,20 +20,21 @@ export async function htmlToMarkdown(
   const onlyMainContent = options?.onlyMainContent ?? true;
   const baseUrl = options?.baseUrl;
   const dom = new JSDOM(html, { url: baseUrl || "https://placeholder.local" });
-  const doc = dom.window.document;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const doc = dom.window.document as any;
 
   const links = extractLinks(doc, baseUrl);
-  let title = doc.querySelector("title")?.textContent?.trim() || "";
+  let title: string = doc.querySelector("title")?.textContent?.trim() || "";
   // Extract h1 before Readability mutates the DOM
-  const h1Title = doc.querySelector("h1")?.textContent?.trim() || "";
+  const h1Title: string = doc.querySelector("h1")?.textContent?.trim() || "";
   let htmlForConversion: string;
 
   if (onlyMainContent) {
     const reader = new Readability(doc);
     const article = reader.parse();
     if (article) {
-      htmlForConversion = article.content;
-      title = article.title || title;
+      htmlForConversion = (article.content as string) || "";
+      title = (article.title as string) || title;
     } else {
       htmlForConversion = doc.body?.innerHTML || html;
     }
@@ -60,7 +61,8 @@ export async function htmlToMarkdown(
   return { content: markdown, title, links };
 }
 
-function extractLinks(doc: Document, baseUrl?: string): string[] {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractLinks(doc: any, baseUrl?: string): string[] {
   const anchors = doc.querySelectorAll("a[href]");
   const links: string[] = [];
   for (const anchor of anchors) {
