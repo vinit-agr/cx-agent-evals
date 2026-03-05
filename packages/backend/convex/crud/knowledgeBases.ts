@@ -7,6 +7,12 @@ export const create = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     metadata: v.optional(v.any()),
+    industry: v.optional(v.string()),
+    subIndustry: v.optional(v.string()),
+    company: v.optional(v.string()),
+    entityType: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const { orgId, userId } = await getAuthContext(ctx);
@@ -25,6 +31,12 @@ export const create = mutation({
       name: args.name,
       description: args.description,
       metadata: args.metadata ?? {},
+      industry: args.industry,
+      subIndustry: args.subIndustry,
+      company: args.company,
+      entityType: args.entityType,
+      sourceUrl: args.sourceUrl,
+      tags: args.tags,
       createdBy: user._id,
       createdAt: Date.now(),
     });
