@@ -65,6 +65,7 @@ export const listByKb = query({
       docId: doc.docId,
       title: doc.title,
       contentLength: doc.contentLength,
+      sourceType: doc.sourceType,
       createdAt: doc.createdAt,
     }));
   },
