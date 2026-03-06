@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
-import { KBSelector } from "@/components/KBSelector";
+import { KBDropdown } from "@/components/KBDropdown";
 import { useKbFromUrl, buildKbLink } from "@/lib/useKbFromUrl";
 import Link from "next/link";
 
@@ -136,7 +136,7 @@ function ExperimentsPageContent() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Configuration Panel */}
-        <div className="w-[420px] flex-shrink-0 border-r border-border bg-bg-elevated overflow-y-auto">
+        <div className="w-[360px] flex-shrink-0 border-r border-border bg-bg-elevated overflow-y-auto">
           <div className="p-4 space-y-4">
             {/* KB Selector */}
             <div className="border border-border rounded-lg bg-bg">
@@ -144,7 +144,7 @@ function ExperimentsPageContent() {
                 Knowledge Base
               </div>
               <div className="p-4">
-                <KBSelector selectedKbId={selectedKbId} onSelect={setSelectedKbId} />
+                <KBDropdown selectedKbId={selectedKbId} onSelect={setSelectedKbId} />
               </div>
             </div>
 

@@ -52,12 +52,6 @@ export function GenerateConfig({
 
   return (
     <div className="animate-fade-in">
-      <div className="mb-4">
-        <span className="text-xs text-text-dim uppercase tracking-wider">
-          Generation config
-        </span>
-      </div>
-
       <div className="space-y-4">
         <StrategySelector value={strategy} onChange={onStrategyChange} />
 
@@ -155,11 +149,11 @@ export function GenerateConfig({
       <button
         onClick={onGenerate}
         disabled={disabled || generating || !canGenerate}
-        className="mt-5 w-full py-2.5 rounded border text-xs font-semibold uppercase tracking-wider
-                   transition-all cursor-pointer
-                   disabled:opacity-30 disabled:cursor-not-allowed
-                   bg-accent/10 border-accent/30 text-accent
-                   hover:bg-accent/20 hover:border-accent/50"
+        className={`mt-5 w-full py-3 rounded-lg font-semibold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-colors ${
+          !(disabled || generating || !canGenerate)
+            ? "bg-accent hover:bg-accent/90 text-bg-elevated cursor-pointer"
+            : "bg-border text-text-dim cursor-not-allowed"
+        }`}
       >
         {generating ? (
           <span className="flex items-center justify-center gap-2">

@@ -6,7 +6,7 @@ import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
 import { useKbFromUrl } from "@/lib/useKbFromUrl";
-import { KBSelector } from "@/components/KBSelector";
+import { KBDropdown } from "@/components/KBDropdown";
 import { PipelineConfigModal } from "@/components/PipelineConfigModal";
 import {
   PipelineConfigSummary,
@@ -288,7 +288,7 @@ function RetrieversPageContent() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left: Configuration Panel */}
-        <div className="w-[420px] flex-shrink-0 border-r border-border bg-bg-elevated overflow-y-auto">
+        <div className="w-[360px] flex-shrink-0 border-r border-border bg-bg-elevated overflow-y-auto">
           <div className="p-4 space-y-4">
             {/* KB Selector */}
             <div className="border border-border rounded-lg bg-bg">
@@ -296,7 +296,7 @@ function RetrieversPageContent() {
                 Knowledge Base
               </div>
               <div className="p-4">
-                <KBSelector
+                <KBDropdown
                   selectedKbId={selectedKbId}
                   onSelect={setSelectedKbId}
                 />

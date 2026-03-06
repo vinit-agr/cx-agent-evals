@@ -7,6 +7,12 @@ export const create = mutation({
     name: v.string(),
     description: v.optional(v.string()),
     metadata: v.optional(v.any()),
+    industry: v.optional(v.string()),
+    subIndustry: v.optional(v.string()),
+    company: v.optional(v.string()),
+    entityType: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    tags: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const { orgId, userId } = await getAuthContext(ctx);
@@ -25,6 +31,12 @@ export const create = mutation({
       name: args.name,
       description: args.description,
       metadata: args.metadata ?? {},
+      industry: args.industry,
+      subIndustry: args.subIndustry,
+      company: args.company,
+      entityType: args.entityType,
+      sourceUrl: args.sourceUrl,
+      tags: args.tags,
       createdBy: user._id,
       createdAt: Date.now(),
     });
@@ -41,6 +53,59 @@ export const list = query({
       .withIndex("by_org", (q) => q.eq("orgId", orgId))
       .order("desc")
       .collect();
+  },
+});
+
+export const listByIndustry = query({
+  args: { industry: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const { orgId } = await getAuthContext(ctx);
+    if (args.industry) {
+      return await ctx.db
+        .query("knowledgeBases")
+        .withIndex("by_org_industry", (q) =>
+          q.eq("orgId", orgId).eq("industry", args.industry!),
+        )
+        .order("desc")
+        .collect();
+    }
+    return await ctx.db
+      .query("knowledgeBases")
+      .withIndex("by_org", (q) => q.eq("orgId", orgId))
+      .order("desc")
+      .collect();
+  },
+});
+
+export const listWithDocCounts = query({
+  args: { industry: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const { orgId } = await getAuthContext(ctx);
+    let kbs;
+    if (args.industry) {
+      kbs = await ctx.db
+        .query("knowledgeBases")
+        .withIndex("by_org_industry", (q) =>
+          q.eq("orgId", orgId).eq("industry", args.industry!),
+        )
+        .order("desc")
+        .collect();
+    } else {
+      kbs = await ctx.db
+        .query("knowledgeBases")
+        .withIndex("by_org", (q) => q.eq("orgId", orgId))
+        .order("desc")
+        .collect();
+    }
+    return Promise.all(
+      kbs.map(async (kb) => {
+        const docs = await ctx.db
+          .query("documents")
+          .withIndex("by_kb", (q) => q.eq("kbId", kb._id))
+          .collect();
+        return { ...kb, documentCount: docs.length };
+      }),
+    );
   },
 });
 
