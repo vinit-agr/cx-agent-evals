@@ -6,7 +6,7 @@ import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
 import { useKbFromUrl } from "@/lib/useKbFromUrl";
-import { KBSelector } from "@/components/KBSelector";
+import { KBDropdown } from "@/components/KBDropdown";
 import { PipelineConfigModal } from "@/components/PipelineConfigModal";
 import {
   PipelineConfigSummary,
@@ -296,7 +296,7 @@ function RetrieversPageContent() {
                 Knowledge Base
               </div>
               <div className="p-4">
-                <KBSelector
+                <KBDropdown
                   selectedKbId={selectedKbId}
                   onSelect={setSelectedKbId}
                 />

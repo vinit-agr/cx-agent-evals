@@ -5,7 +5,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
-import { KBSelector } from "@/components/KBSelector";
+import { KBDropdown } from "@/components/KBDropdown";
 import { useKbFromUrl, buildKbLink } from "@/lib/useKbFromUrl";
 import Link from "next/link";
 
@@ -144,7 +144,7 @@ function ExperimentsPageContent() {
                 Knowledge Base
               </div>
               <div className="p-4">
-                <KBSelector selectedKbId={selectedKbId} onSelect={setSelectedKbId} />
+                <KBDropdown selectedKbId={selectedKbId} onSelect={setSelectedKbId} />
               </div>
             </div>
 

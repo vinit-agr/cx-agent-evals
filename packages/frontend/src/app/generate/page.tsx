@@ -6,7 +6,7 @@ import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
 import { useKbFromUrl } from "@/lib/useKbFromUrl";
-import { KBSelector } from "@/components/KBSelector";
+import { KBDropdown } from "@/components/KBDropdown";
 import { GenerateConfig, GenerateSettings } from "@/components/GenerateConfig";
 import { QuestionList } from "@/components/QuestionList";
 import { DocumentViewer } from "@/components/DocumentViewer";
@@ -296,7 +296,7 @@ function GeneratePageContent() {
         {/* Left sidebar: KB selector + config */}
         <div className="w-80 flex-shrink-0 border-r border-border bg-bg-elevated overflow-y-auto">
           <div className="p-4 space-y-6">
-            <KBSelector selectedKbId={selectedKbId} onSelect={setSelectedKbId} />
+            <KBDropdown selectedKbId={selectedKbId} onSelect={setSelectedKbId} />
 
             {/* Dataset section — appears after KB selected */}
             {selectedKbId && kbDatasets !== undefined && (
