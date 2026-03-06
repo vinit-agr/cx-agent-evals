@@ -1,4 +1,4 @@
-import { mutation, query, internalQuery } from "../_generated/server";
+import { mutation, query, internalQuery, internalMutation } from "../_generated/server";
 import { v } from "convex/values";
 import { getAuthContext } from "../lib/auth";
 
@@ -65,6 +65,7 @@ export const listByKb = query({
       docId: doc.docId,
       title: doc.title,
       contentLength: doc.contentLength,
+      sourceType: doc.sourceType,
       createdAt: doc.createdAt,
     }));
   },
@@ -77,9 +78,24 @@ export const get = query({
 
     const doc = await ctx.db.get(args.id);
     if (!doc || doc.orgId !== orgId) {
-      throw new Error("Document not found");
+      return null;
     }
     return doc;
+  },
+});
+
+export const remove = mutation({
+  args: { id: v.id("documents") },
+  handler: async (ctx, args) => {
+    const { orgId } = await getAuthContext(ctx);
+    const doc = await ctx.db.get(args.id);
+    if (!doc || doc.orgId !== orgId) {
+      throw new Error("Document not found");
+    }
+    if (doc.fileId) {
+      await ctx.storage.delete(doc.fileId);
+    }
+    await ctx.db.delete(args.id);
   },
 });
 
@@ -106,5 +122,34 @@ export const getInternal = internalQuery({
     const doc = await ctx.db.get(args.id);
     if (!doc) throw new Error("Document not found");
     return doc;
+  },
+});
+
+/**
+ * Internal mutation: create a document from scraped content (no file upload).
+ * Used by scraping actions to persist crawled pages.
+ */
+export const createFromScrape = internalMutation({
+  args: {
+    orgId: v.string(),
+    kbId: v.id("knowledgeBases"),
+    title: v.string(),
+    content: v.string(),
+    sourceUrl: v.optional(v.string()),
+    sourceType: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db.insert("documents", {
+      orgId: args.orgId,
+      kbId: args.kbId,
+      docId: args.title,
+      title: args.title,
+      content: args.content,
+      contentLength: args.content.length,
+      metadata: {},
+      sourceUrl: args.sourceUrl,
+      sourceType: args.sourceType,
+      createdAt: Date.now(),
+    });
   },
 });
