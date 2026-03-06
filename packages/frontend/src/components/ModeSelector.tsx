@@ -21,7 +21,45 @@ export function ModeSelector() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {/* Knowledge Base Card */}
+          <Link
+            href="/kb"
+            className="group block border border-border rounded-lg bg-bg-elevated p-8 hover:border-accent/50 hover:bg-bg-elevated/80 transition-all duration-200"
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center group-hover:bg-accent/20 transition-colors">
+                <svg
+                  className="w-5 h-5 text-accent"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"
+                  />
+                </svg>
+              </div>
+              <h2 className="text-lg font-medium text-text group-hover:text-accent transition-colors">
+                Knowledge Base
+              </h2>
+            </div>
+            <p className="text-text-muted text-sm leading-relaxed">
+              Create and manage knowledge bases. Upload documents, import from
+              URLs, and organize your data.
+            </p>
+            <div className="mt-6 text-xs text-text-dim flex items-center gap-2">
+              <span>Create KB</span>
+              <span className="text-border">&rarr;</span>
+              <span>Upload docs</span>
+              <span className="text-border">&rarr;</span>
+              <span>Import URLs</span>
+            </div>
+          </Link>
+
           {/* Generate Questions Card */}
           <Link
             href="/generate"
