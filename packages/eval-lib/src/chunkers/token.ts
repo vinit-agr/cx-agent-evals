@@ -16,6 +16,7 @@ export class TokenChunker implements Chunker, PositionAwareChunker {
   private readonly _maxTokens: number;
   private readonly _overlapTokens: number;
   private readonly _encoding: string;
+  private _enc: Tiktoken | null = null;
 
   constructor(options: TokenChunkerOptions = {}) {
     this._maxTokens = options.maxTokens ?? 256;
@@ -29,6 +30,15 @@ export class TokenChunker implements Chunker, PositionAwareChunker {
     this.name = `Token(tokens=${this._maxTokens})`;
   }
 
+  private _getEncoder(): Tiktoken {
+    if (!this._enc) {
+      this._enc = getEncoding(
+        this._encoding as Parameters<typeof getEncoding>[0],
+      );
+    }
+    return this._enc;
+  }
+
   chunk(text: string): string[] {
     const doc = createDocument({ id: "_chunk_", content: text });
     return this.chunkWithPositions(doc).map((c) => c.content);
@@ -37,9 +47,7 @@ export class TokenChunker implements Chunker, PositionAwareChunker {
   chunkWithPositions(doc: Document): PositionAwareChunk[] {
     if (doc.content.trim().length === 0) return [];
 
-    const enc = getEncoding(
-      this._encoding as Parameters<typeof getEncoding>[0],
-    );
+    const enc = this._getEncoder();
     const tokens = enc.encode(doc.content);
 
     if (tokens.length === 0) return [];

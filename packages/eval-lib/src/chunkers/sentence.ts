@@ -4,6 +4,11 @@ import { createDocument } from "../types/documents.js";
 import type { Chunker, PositionAwareChunker } from "./chunker.interface.js";
 
 export interface SentenceChunkerOptions {
+  /**
+   * Maximum character length for grouped sentence chunks. Individual sentences
+   * exceeding this limit are emitted as-is (sentence integrity is preserved
+   * over strict size enforcement).
+   */
   maxChunkSize?: number;
   overlapSentences?: number;
 }
