@@ -19,10 +19,13 @@ function BrandedSpinner() {
         <div className="flex items-center justify-center gap-3">
           <div className="w-3 h-3 rounded-full bg-accent animate-pulse-dot" />
           <span className="text-sm font-semibold tracking-wide text-text">
-            rag-eval
+            CX Agent Evals
           </span>
         </div>
-        <div className="w-5 h-5 border-2 border-accent/30 border-t-accent rounded-full animate-spin mx-auto" />
+        <div className="flex items-center justify-center gap-2">
+          <div className="w-4 h-4 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+          <span className="text-xs text-text-dim">Loading...</span>
+        </div>
       </div>
     </div>
   );
@@ -50,11 +53,11 @@ function LandingPage() {
           <div className="flex items-center justify-center gap-3">
             <div className="w-3 h-3 rounded-full bg-accent animate-pulse-dot" />
             <h1 className="text-2xl font-semibold tracking-wide text-text">
-              rag-eval
+              CX Agent Evals
             </h1>
           </div>
           <p className="text-text-muted text-sm">
-            Evaluate RAG retrieval pipelines with synthetic datasets
+            Build and Evaluate CX AI Agents
           </p>
         </div>
 
@@ -122,7 +125,7 @@ function OrgGate({ children }: { children: React.ReactNode }) {
             <div className="flex items-center justify-center gap-3 mb-4">
               <div className="w-2 h-2 rounded-full bg-accent animate-pulse-dot" />
               <span className="text-sm font-semibold tracking-wide text-text">
-                rag-eval
+                CX Agent Evals
               </span>
             </div>
             <h2 className="text-lg font-medium text-text">
