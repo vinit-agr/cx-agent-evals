@@ -290,11 +290,11 @@ function GeneratePageContent() {
 
   return (
     <div className="flex flex-col h-screen">
-      <Header mode="generate" kbId={selectedKbId} onReset={handleReset} />
+      <Header mode="generate" kbId={selectedKbId} />
 
       <div className="flex flex-1 overflow-hidden max-w-full">
         {/* Left sidebar: KB selector + config */}
-        <div className="w-80 flex-shrink-0 border-r border-border bg-bg-elevated overflow-y-auto">
+        <div className="w-[420px] flex-shrink-0 border-r border-border bg-bg-elevated overflow-y-auto">
           <div className="p-4 space-y-4">
             {/* KB Selector */}
             <div className="border border-border rounded-lg bg-bg">

@@ -8,7 +8,7 @@ export function ModeSelector() {
     <div className="flex flex-col min-h-screen bg-bg">
       <Header />
       <div className="flex-1 flex items-center justify-center p-8">
-      <div className="max-w-5xl w-full">
+      <div className="max-w-6xl w-full">
         <div className="text-center mb-12">
           <div className="flex items-center justify-center gap-3 mb-4">
             <div className="w-3 h-3 rounded-full bg-accent animate-pulse-dot" />
@@ -17,11 +17,11 @@ export function ModeSelector() {
             </h1>
           </div>
           <p className="text-text-muted text-sm">
-            RAG Retrieval Evaluation System
+            Build and Evaluate CX AI Agents
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
           {/* Knowledge Base Card */}
           <Link
             href="/kb"
