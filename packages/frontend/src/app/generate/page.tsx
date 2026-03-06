@@ -295,14 +295,22 @@ function GeneratePageContent() {
       <div className="flex flex-1 overflow-hidden max-w-full">
         {/* Left sidebar: KB selector + config */}
         <div className="w-80 flex-shrink-0 border-r border-border bg-bg-elevated overflow-y-auto">
-          <div className="p-4 space-y-6">
-            <KBDropdown selectedKbId={selectedKbId} onSelect={setSelectedKbId} />
+          <div className="p-4 space-y-4">
+            {/* KB Selector */}
+            <div className="border border-border rounded-lg bg-bg">
+              <div className="px-4 py-2 border-b border-border text-xs text-text-dim uppercase tracking-wider">
+                Knowledge Base
+              </div>
+              <div className="p-4">
+                <KBDropdown selectedKbId={selectedKbId} onSelect={setSelectedKbId} />
+              </div>
+            </div>
 
             {/* Dataset section — appears after KB selected */}
             {selectedKbId && kbDatasets !== undefined && (
-              <div className="pt-2 border-t border-border">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs text-text-muted uppercase tracking-wide">
+              <div className="border border-border rounded-lg bg-bg">
+                <div className="px-4 py-2 border-b border-border flex items-center justify-between">
+                  <span className="text-xs text-text-dim uppercase tracking-wider">
                     Datasets ({kbDatasets.length})
                   </span>
                   {kbDatasets.length > 0 && (
@@ -323,7 +331,7 @@ function GeneratePageContent() {
                 </div>
 
                 {mode === "browse" && kbDatasets.length > 0 && (
-                  <div className="space-y-1 max-h-64 overflow-y-auto">
+                  <div className="p-4 space-y-1 max-h-64 overflow-y-auto">
                     {kbDatasets.map((ds) => (
                       <button
                         key={ds._id}
@@ -351,23 +359,28 @@ function GeneratePageContent() {
             )}
 
             {hasDocuments && mode === "generate" && (
-              <div className="pt-2 border-t border-border">
-                <GenerateConfig
-                  settings={settings}
-                  onChange={setSettings}
-                  onGenerate={handleGenerate}
-                  disabled={!hasDocuments}
-                  generating={generating}
-                  strategy={strategy}
-                  onStrategyChange={setStrategy}
-                  dimensions={dimensions}
-                  totalQuestions={totalQuestions}
-                  onOpenWizard={handleOpenWizard}
-                  realWorldQuestions={realWorldQuestions}
-                  totalSyntheticQuestions={totalSyntheticQuestions}
-                  onTotalSyntheticChange={setTotalSyntheticQuestions}
-                  onOpenRealWorldModal={() => setRealWorldModalOpen(true)}
-                />
+              <div className="border border-border rounded-lg bg-bg">
+                <div className="px-4 py-2 border-b border-border text-xs text-text-dim uppercase tracking-wider">
+                  Generation Config
+                </div>
+                <div className="p-4">
+                  <GenerateConfig
+                    settings={settings}
+                    onChange={setSettings}
+                    onGenerate={handleGenerate}
+                    disabled={!hasDocuments}
+                    generating={generating}
+                    strategy={strategy}
+                    onStrategyChange={setStrategy}
+                    dimensions={dimensions}
+                    totalQuestions={totalQuestions}
+                    onOpenWizard={handleOpenWizard}
+                    realWorldQuestions={realWorldQuestions}
+                    totalSyntheticQuestions={totalSyntheticQuestions}
+                    onTotalSyntheticChange={setTotalSyntheticQuestions}
+                    onOpenRealWorldModal={() => setRealWorldModalOpen(true)}
+                  />
+                </div>
               </div>
             )}
 

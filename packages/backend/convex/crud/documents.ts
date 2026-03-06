@@ -78,7 +78,7 @@ export const get = query({
 
     const doc = await ctx.db.get(args.id);
     if (!doc || doc.orgId !== orgId) {
-      throw new Error("Document not found");
+      return null;
     }
     return doc;
   },
