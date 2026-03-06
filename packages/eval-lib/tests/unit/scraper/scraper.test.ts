@@ -1,13 +1,19 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ContentScraper } from "../../../src/scraper/scraper.js";
 
-vi.mock("got-scraping", () => ({
-  gotScraping: vi.fn().mockResolvedValue({
-    body: "<html><body><h1>Test Page</h1><p>Content</p><a href='/other'>Link</a></body></html>",
-    statusCode: 200,
-    headers: { "content-type": "text/html" },
-  }),
-}));
+const mockHtml =
+  "<html><body><h1>Test Page</h1><p>Content</p><a href='/other'>Link</a></body></html>";
+
+beforeEach(() => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      text: () => Promise.resolve(mockHtml),
+      status: 200,
+      headers: new Headers({ "content-type": "text/html" }),
+    }),
+  );
+});
 
 describe("ContentScraper", () => {
   it("scrapes a URL and returns markdown + metadata", async () => {

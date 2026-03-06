@@ -30,6 +30,5 @@ export default defineConfig({
     "jsdom",
     "turndown",
     "unpdf",
-    "got-scraping",
   ],
 });

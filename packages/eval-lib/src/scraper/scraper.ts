@@ -1,4 +1,3 @@
-import { gotScraping } from "got-scraping";
 import { htmlToMarkdown } from "../file-processing/html-to-markdown.js";
 import type { ScrapedPage, ScrapeOptions } from "./types.js";
 
@@ -18,18 +17,25 @@ export class ContentScraper {
   }
 
   async scrape(url: string, options?: ScrapeOptions): Promise<ScrapedPage> {
-    const response = await gotScraping({
-      url,
-      headers: {
-        "User-Agent": this.userAgent,
-        ...this.defaultHeaders,
-        ...options?.headers,
-      },
-      timeout: { request: options?.timeout ?? 30_000 },
-      responseType: "text",
-    });
+    const controller = new AbortController();
+    const timeoutMs = options?.timeout ?? 30_000;
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-    const html = response.body as string;
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: {
+          "User-Agent": this.userAgent,
+          ...this.defaultHeaders,
+          ...options?.headers,
+        },
+        signal: controller.signal,
+      });
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const html = await response.text();
 
     const result = await htmlToMarkdown(html, {
       onlyMainContent: options?.onlyMainContent ?? true,
@@ -49,7 +55,7 @@ export class ContentScraper {
         sourceURL: url,
         description: descMatch?.[1],
         language: langMatch?.[1],
-        statusCode: response.statusCode,
+        statusCode: response.status,
         links: result.links,
       },
     };

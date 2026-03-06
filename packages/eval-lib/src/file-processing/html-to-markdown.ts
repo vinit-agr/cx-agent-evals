@@ -1,7 +1,3 @@
-import { JSDOM } from "jsdom";
-import { Readability } from "@mozilla/readability";
-import TurndownService from "turndown";
-
 export interface HtmlToMarkdownOptions {
   onlyMainContent?: boolean;
   baseUrl?: string;
@@ -17,6 +13,12 @@ export async function htmlToMarkdown(
   html: string,
   options?: HtmlToMarkdownOptions,
 ): Promise<HtmlToMarkdownResult> {
+  // Dynamic imports — jsdom loads filesystem resources (default-stylesheet.css)
+  // at module init time, which breaks in serverless environments like Convex.
+  const { JSDOM } = await import("jsdom");
+  const { Readability } = await import("@mozilla/readability");
+  const TurndownService = (await import("turndown")).default;
+
   const onlyMainContent = options?.onlyMainContent ?? true;
   const baseUrl = options?.baseUrl;
   const dom = new JSDOM(html, { url: baseUrl || "https://placeholder.local" });
