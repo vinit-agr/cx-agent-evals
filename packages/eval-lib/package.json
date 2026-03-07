@@ -67,6 +67,10 @@
     "./scraper": {
       "types": "./dist/scraper/index.d.ts",
       "import": "./dist/scraper/index.js"
+    },
+    "./registry": {
+      "types": "./dist/registry/index.d.ts",
+      "import": "./dist/registry/index.js"
     }
   },
   "files": [

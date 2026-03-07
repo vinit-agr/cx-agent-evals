@@ -17,6 +17,7 @@ export default defineConfig({
     "src/shared/index.ts",
     "src/file-processing/index.ts",
     "src/scraper/index.ts",
+    "src/registry/index.ts",
   ],
   format: ["esm", "cjs"],
   dts: true,
