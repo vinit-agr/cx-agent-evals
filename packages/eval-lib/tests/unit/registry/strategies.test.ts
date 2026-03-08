@@ -71,14 +71,9 @@ describe("INDEX_STRATEGY_REGISTRY", () => {
     expect(ids).toEqual(["plain", "contextual", "summary", "parent-child"]);
   });
 
-  it("only plain is available", () => {
-    expect(
-      INDEX_STRATEGY_REGISTRY.find((e) => e.id === "plain")!.status,
-    ).toBe("available");
-    for (const entry of INDEX_STRATEGY_REGISTRY.filter(
-      (e) => e.id !== "plain",
-    )) {
-      expect(entry.status).toBe("coming-soon");
+  it("all 4 index strategies are available", () => {
+    for (const entry of INDEX_STRATEGY_REGISTRY) {
+      expect(entry.status).toBe("available");
     }
   });
 

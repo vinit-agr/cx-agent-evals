@@ -15,7 +15,7 @@ export const INDEX_STRATEGY_REGISTRY: readonly RegistryEntry[] = [
     name: "Contextual",
     description:
       "Prepends LLM-generated context to each chunk before embedding, improving retrieval by capturing broader document context. Increases indexing time and cost.",
-    status: "coming-soon",
+    status: "available",
     tags: ["requires-llm"],
     options: [
       {
@@ -45,7 +45,7 @@ export const INDEX_STRATEGY_REGISTRY: readonly RegistryEntry[] = [
     name: "Summary",
     description:
       "Generates an LLM summary for each chunk and indexes both the summary embedding and the original text. Helps match high-level queries to specific content.",
-    status: "coming-soon",
+    status: "available",
     tags: ["requires-llm"],
     options: [
       {
@@ -75,7 +75,7 @@ export const INDEX_STRATEGY_REGISTRY: readonly RegistryEntry[] = [
     name: "Parent-Child",
     description:
       "Creates two levels of chunks: small child chunks for precise retrieval and larger parent chunks for context. Returns parent chunks when child chunks match.",
-    status: "coming-soon",
+    status: "available",
     options: [
       {
         key: "childChunkSize",
