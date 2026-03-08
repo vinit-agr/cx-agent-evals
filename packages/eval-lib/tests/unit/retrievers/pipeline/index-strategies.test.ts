@@ -137,3 +137,84 @@ describe("PipelineRetriever — contextual index strategy", () => {
     await customRetriever.cleanup();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Summary index strategy
+// ---------------------------------------------------------------------------
+
+describe("PipelineRetriever — summary index strategy", () => {
+  let retriever: PipelineRetriever;
+  let mockLlm: PipelineLLM & { complete: ReturnType<typeof vi.fn> };
+  let corpus: Corpus;
+
+  beforeEach(async () => {
+    corpus = testCorpus();
+    mockLlm = createMockLlm("A summary of important topics covered in this passage.");
+
+    const config: PipelineConfig = {
+      name: "summary-test",
+      index: { strategy: "summary" },
+      search: { strategy: "dense" },
+    };
+
+    retriever = new PipelineRetriever(config, defaultDeps({ llm: mockLlm }));
+    await retriever.init(corpus);
+  });
+
+  afterEach(async () => {
+    await retriever.cleanup();
+  });
+
+  it("should call LLM for each chunk during init", () => {
+    expect(mockLlm.complete).toHaveBeenCalled();
+    const callCount = mockLlm.complete.mock.calls.length;
+    expect(callCount).toBeGreaterThan(0);
+  });
+
+  it("should include chunk content in the LLM prompt", () => {
+    const firstPrompt = mockLlm.complete.mock.calls[0][0] as string;
+
+    // DEFAULT_SUMMARY_PROMPT ends with "Passage: " — chunk content is appended
+    expect(firstPrompt).toContain("summary");
+  });
+
+  it("should return valid PositionAwareChunks from retrieve", async () => {
+    const results = await retriever.retrieve("important topics", 3);
+
+    expect(results.length).toBeGreaterThan(0);
+    for (const chunk of results) {
+      expect(chunk).toHaveProperty("id");
+      expect(chunk).toHaveProperty("docId");
+      expect(chunk).toHaveProperty("start");
+      expect(chunk).toHaveProperty("end");
+    }
+  });
+
+  it("should preserve original chunk positions", async () => {
+    const results = await retriever.retrieve("topics", 5);
+
+    for (const chunk of results) {
+      expect(chunk.start).toBeGreaterThanOrEqual(0);
+      expect(chunk.end).toBeGreaterThan(chunk.start);
+    }
+  });
+
+  it("should respect custom summaryPrompt", async () => {
+    await retriever.cleanup();
+
+    const config: PipelineConfig = {
+      name: "custom-summary-test",
+      index: { strategy: "summary", summaryPrompt: "TLDR this text: " },
+      search: { strategy: "dense" },
+    };
+
+    const customLlm = createMockLlm("tl;dr result");
+    const customRetriever = new PipelineRetriever(config, defaultDeps({ llm: customLlm }));
+    await customRetriever.init(corpus);
+
+    const firstPrompt = customLlm.complete.mock.calls[0][0] as string;
+    expect(firstPrompt).toContain("TLDR this text:");
+
+    await customRetriever.cleanup();
+  });
+});

@@ -206,8 +206,28 @@ export class PipelineRetriever implements Retriever {
         break;
       }
 
+      case "summary": {
+        const summaryPrompt = this._indexConfig.summaryPrompt || DEFAULT_SUMMARY_PROMPT;
+        const concurrency = this._indexConfig.concurrency ?? 5;
+
+        chunks = [];
+        for (const doc of corpus.documents) {
+          const rawChunks = this._chunker.chunkWithPositions(doc);
+          const summarized = await mapWithConcurrency(
+            rawChunks,
+            async (chunk) => {
+              const summary = await this._llm!.complete(summaryPrompt + chunk.content);
+              return { ...chunk, content: summary };
+            },
+            concurrency,
+          );
+          chunks.push(...summarized);
+        }
+        break;
+      }
+
       default:
-        // summary and parent-child handled in subsequent tasks
+        // parent-child handled in subsequent task
         chunks = [];
         for (const doc of corpus.documents) {
           chunks.push(...this._chunker.chunkWithPositions(doc));
