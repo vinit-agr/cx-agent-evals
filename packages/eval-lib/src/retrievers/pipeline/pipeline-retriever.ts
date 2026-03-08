@@ -21,6 +21,14 @@ import { DenseSearchStrategy, assignRankScores } from "./search/dense.js";
 import { BM25SearchStrategy } from "./search/bm25.js";
 import { HybridSearchStrategy } from "./search/hybrid.js";
 import { applyThresholdFilter } from "./refinement/threshold.js";
+import {
+  DEFAULT_HYDE_PROMPT,
+  DEFAULT_MULTI_QUERY_PROMPT,
+  DEFAULT_STEP_BACK_PROMPT,
+  DEFAULT_REWRITE_PROMPT,
+} from "./query/prompts.js";
+import { parseVariants } from "./query/utils.js";
+import { rrfFuseMultiple } from "./search/fusion.js";
 
 // ---------------------------------------------------------------------------
 // Dependencies — runtime instances that can't be serialized in config
@@ -169,18 +177,28 @@ export class PipelineRetriever implements Retriever {
       throw new Error("PipelineRetriever not initialized. Call init() first.");
     }
 
-    // QUERY stage — identity passthrough (future: HyDE, multi-query)
-    const processedQuery = query;
+    // QUERY stage — transform/expand the query
+    const queries = await this._processQuery(query);
 
-    // SEARCH stage — delegated to strategy object
-    let scoredResults: ScoredChunk[] = await this._searchStrategy.search(
-      processedQuery,
-      k,
-      this._searchStrategyDeps,
-    );
+    // SEARCH stage — search per query, fuse if multiple
+    let scoredResults: ScoredChunk[];
+    if (queries.length === 1) {
+      scoredResults = await this._searchStrategy.search(
+        queries[0],
+        k,
+        this._searchStrategyDeps,
+      );
+    } else {
+      const perQueryResults = await Promise.all(
+        queries.map((q) =>
+          this._searchStrategy.search(q, k * 2, this._searchStrategyDeps),
+        ),
+      );
+      scoredResults = rrfFuseMultiple(perQueryResults);
+    }
 
-    // REFINEMENT stage
-    scoredResults = await this._applyRefinements(processedQuery, scoredResults, k);
+    // REFINEMENT stage — always uses the ORIGINAL user query
+    scoredResults = await this._applyRefinements(query, scoredResults, k);
 
     return scoredResults.slice(0, k).map(({ chunk }) => chunk);
   }
@@ -195,6 +213,54 @@ export class PipelineRetriever implements Retriever {
     // Let the strategy clean up its own internal state (e.g. BM25 index)
     await this._searchStrategy.cleanup(this._searchStrategyDeps);
     this._initialized = false;
+  }
+
+  // -------------------------------------------------------------------------
+  // Query processing
+  // -------------------------------------------------------------------------
+
+  private async _processQuery(query: string): Promise<string[]> {
+    const config = this._queryConfig;
+
+    switch (config.strategy) {
+      case "identity":
+        return [query];
+
+      case "hyde": {
+        const prompt = config.hydePrompt ?? DEFAULT_HYDE_PROMPT;
+        const n = config.numHypotheticalDocs ?? 1;
+        if (n === 1) {
+          const hypothetical = await this._llm!.complete(prompt + query);
+          return [hypothetical];
+        }
+        const hypotheticals = await Promise.all(
+          Array.from({ length: n }, () => this._llm!.complete(prompt + query)),
+        );
+        return hypotheticals;
+      }
+
+      case "multi-query": {
+        const n = config.numQueries ?? 3;
+        const prompt = (config.generationPrompt ?? DEFAULT_MULTI_QUERY_PROMPT).replace(
+          "{n}",
+          String(n),
+        );
+        const variants = await this._llm!.complete(prompt + query);
+        return parseVariants(variants, n);
+      }
+
+      case "step-back": {
+        const prompt = config.stepBackPrompt ?? DEFAULT_STEP_BACK_PROMPT;
+        const abstract = await this._llm!.complete(prompt + query);
+        return config.includeOriginal !== false ? [query, abstract] : [abstract];
+      }
+
+      case "rewrite": {
+        const prompt = config.rewritePrompt ?? DEFAULT_REWRITE_PROMPT;
+        const rewritten = await this._llm!.complete(prompt + query);
+        return [rewritten];
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
