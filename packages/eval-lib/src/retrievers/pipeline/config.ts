@@ -38,7 +38,52 @@ export interface IdentityQueryConfig {
   readonly strategy: "identity";
 }
 
-export type QueryConfig = IdentityQueryConfig;
+export interface HydeQueryConfig {
+  readonly strategy: "hyde";
+  /** Custom prompt for generating hypothetical documents. */
+  readonly hydePrompt?: string;
+  /**
+   * Number of hypothetical documents to generate.
+   * Each produces a separate search query whose results are fused via RRF.
+   * @default 1
+   */
+  readonly numHypotheticalDocs?: number;
+}
+
+export interface MultiQueryConfig {
+  readonly strategy: "multi-query";
+  /**
+   * Number of query variants to generate.
+   * @default 3
+   */
+  readonly numQueries?: number;
+  /** Custom prompt for generating query variants. Use `{n}` as placeholder for count. */
+  readonly generationPrompt?: string;
+}
+
+export interface StepBackQueryConfig {
+  readonly strategy: "step-back";
+  /** Custom prompt for generating the abstract step-back question. */
+  readonly stepBackPrompt?: string;
+  /**
+   * Whether to also search with the original query.
+   * @default true
+   */
+  readonly includeOriginal?: boolean;
+}
+
+export interface RewriteQueryConfig {
+  readonly strategy: "rewrite";
+  /** Custom prompt for rewriting the query. */
+  readonly rewritePrompt?: string;
+}
+
+export type QueryConfig =
+  | IdentityQueryConfig
+  | HydeQueryConfig
+  | MultiQueryConfig
+  | StepBackQueryConfig
+  | RewriteQueryConfig;
 
 export const DEFAULT_QUERY_CONFIG: QueryConfig = {
   strategy: "identity",
