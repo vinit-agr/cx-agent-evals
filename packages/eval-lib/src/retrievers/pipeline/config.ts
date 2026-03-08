@@ -12,10 +12,10 @@ function stableStringify(value: unknown): string {
 }
 
 // ---------------------------------------------------------------------------
-// Stage 1 — Index configuration
+// Stage 1 — Index configuration (discriminated union on strategy)
 // ---------------------------------------------------------------------------
 
-export interface IndexConfig {
+export interface PlainIndexConfig {
   readonly strategy: "plain";
   readonly chunkSize?: number;
   readonly chunkOverlap?: number;
@@ -23,7 +23,46 @@ export interface IndexConfig {
   readonly embeddingModel?: string;
 }
 
-export const DEFAULT_INDEX_CONFIG: IndexConfig = {
+export interface ContextualIndexConfig {
+  readonly strategy: "contextual";
+  readonly chunkSize?: number;
+  readonly chunkOverlap?: number;
+  readonly embeddingModel?: string;
+  readonly contextPrompt?: string;
+  /** Number of parallel LLM calls during indexing. @default 5 */
+  readonly concurrency?: number;
+}
+
+export interface SummaryIndexConfig {
+  readonly strategy: "summary";
+  readonly chunkSize?: number;
+  readonly chunkOverlap?: number;
+  readonly embeddingModel?: string;
+  readonly summaryPrompt?: string;
+  /** Number of parallel LLM calls during indexing. @default 5 */
+  readonly concurrency?: number;
+}
+
+export interface ParentChildIndexConfig {
+  readonly strategy: "parent-child";
+  readonly embeddingModel?: string;
+  /** Small chunk size for retrieval matching. @default 200 */
+  readonly childChunkSize?: number;
+  /** Large chunk size for context return. @default 1000 */
+  readonly parentChunkSize?: number;
+  /** @default 0 */
+  readonly childOverlap?: number;
+  /** @default 100 */
+  readonly parentOverlap?: number;
+}
+
+export type IndexConfig =
+  | PlainIndexConfig
+  | ContextualIndexConfig
+  | SummaryIndexConfig
+  | ParentChildIndexConfig;
+
+export const DEFAULT_INDEX_CONFIG: PlainIndexConfig = {
   strategy: "plain",
   chunkSize: 1000,
   chunkOverlap: 200,

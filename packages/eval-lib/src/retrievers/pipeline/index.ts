@@ -10,6 +10,10 @@ export {
 export type {
   PipelineConfig,
   IndexConfig,
+  PlainIndexConfig,
+  ContextualIndexConfig,
+  SummaryIndexConfig,
+  ParentChildIndexConfig,
   QueryConfig,
   IdentityQueryConfig,
   HydeQueryConfig,
