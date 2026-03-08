@@ -28,9 +28,12 @@ import {
   DEFAULT_MULTI_QUERY_PROMPT,
   DEFAULT_STEP_BACK_PROMPT,
   DEFAULT_REWRITE_PROMPT,
+  DEFAULT_CONTEXT_PROMPT,
+  DEFAULT_SUMMARY_PROMPT,
 } from "./query/prompts.js";
 import { parseVariants } from "./query/utils.js";
 import { rrfFuseMultiple } from "./search/fusion.js";
+import { mapWithConcurrency } from "../../utils/concurrency.js";
 
 // ---------------------------------------------------------------------------
 // Dependencies — runtime instances that can't be serialized in config
@@ -169,14 +172,50 @@ export class PipelineRetriever implements Retriever {
   // -------------------------------------------------------------------------
 
   async init(corpus: Corpus): Promise<void> {
-    const chunks: PositionAwareChunk[] = [];
+    let chunks: PositionAwareChunk[];
 
-    for (const doc of corpus.documents) {
-      chunks.push(...this._chunker.chunkWithPositions(doc));
+    switch (this._indexConfig.strategy) {
+      case "plain": {
+        chunks = [];
+        for (const doc of corpus.documents) {
+          chunks.push(...this._chunker.chunkWithPositions(doc));
+        }
+        break;
+      }
+
+      case "contextual": {
+        const contextPrompt = this._indexConfig.contextPrompt || DEFAULT_CONTEXT_PROMPT;
+        const concurrency = this._indexConfig.concurrency ?? 5;
+
+        chunks = [];
+        for (const doc of corpus.documents) {
+          const rawChunks = this._chunker.chunkWithPositions(doc);
+          const enriched = await mapWithConcurrency(
+            rawChunks,
+            async (chunk) => {
+              const prompt = contextPrompt
+                .replace("{doc.content}", doc.content)
+                .replace("{chunk.content}", chunk.content);
+              const context = await this._llm!.complete(prompt);
+              return { ...chunk, content: context + "\n\n" + chunk.content };
+            },
+            concurrency,
+          );
+          chunks.push(...enriched);
+        }
+        break;
+      }
+
+      default:
+        // summary and parent-child handled in subsequent tasks
+        chunks = [];
+        for (const doc of corpus.documents) {
+          chunks.push(...this._chunker.chunkWithPositions(doc));
+        }
+        break;
     }
 
     await this._searchStrategy.init(chunks, this._searchStrategyDeps);
-
     this._initialized = true;
   }
 
