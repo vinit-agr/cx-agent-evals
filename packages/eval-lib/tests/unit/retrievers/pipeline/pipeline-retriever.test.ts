@@ -3,6 +3,7 @@ import { PipelineRetriever } from "../../../../src/retrievers/pipeline/pipeline-
 import type { PipelineRetrieverDeps } from "../../../../src/retrievers/pipeline/pipeline-retriever.js";
 import type { PipelineConfig } from "../../../../src/retrievers/pipeline/config.js";
 import type { Reranker } from "../../../../src/rerankers/reranker.interface.js";
+import type { PipelineLLM } from "../../../../src/retrievers/pipeline/llm.interface.js";
 import type { PositionAwareChunk, Corpus } from "../../../../src/types/index.js";
 import { createCorpus, createDocument } from "../../../../src/types/documents.js";
 import { RecursiveCharacterChunker } from "../../../../src/chunkers/recursive-character.js";
@@ -422,5 +423,49 @@ describe("PipelineRetriever — indexConfigHash", () => {
     const retrieverB = new PipelineRetriever(configB, defaultDeps());
 
     expect(retrieverA.indexConfigHash).not.toBe(retrieverB.indexConfigHash);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 10. LLM validation
+// ---------------------------------------------------------------------------
+
+describe("PipelineRetriever — LLM validation", () => {
+  const llmStrategies = ["hyde", "multi-query", "step-back", "rewrite"] as const;
+
+  for (const strategy of llmStrategies) {
+    it(`should throw if "${strategy}" strategy is used without an LLM`, () => {
+      expect(
+        () =>
+          new PipelineRetriever(
+            { name: "test", query: { strategy } as any, search: { strategy: "dense" } },
+            defaultDeps(),
+          ),
+      ).toThrow(/requires an LLM/);
+    });
+  }
+
+  it("should NOT throw for identity strategy without LLM", () => {
+    expect(
+      () =>
+        new PipelineRetriever(
+          { name: "test", query: { strategy: "identity" }, search: { strategy: "dense" } },
+          defaultDeps(),
+        ),
+    ).not.toThrow();
+  });
+
+  it("should NOT throw for LLM strategy when LLM is provided", () => {
+    const mockLlm: PipelineLLM = {
+      name: "MockLLM",
+      complete: async () => "response",
+    };
+    expect(
+      () =>
+        new PipelineRetriever(
+          { name: "test", query: { strategy: "hyde" }, search: { strategy: "dense" } },
+          defaultDeps({ llm: mockLlm }),
+        ),
+    ).not.toThrow();
   });
 });

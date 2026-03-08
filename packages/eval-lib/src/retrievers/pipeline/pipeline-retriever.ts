@@ -3,13 +3,16 @@ import type { PositionAwareChunker } from "../../chunkers/chunker.interface.js";
 import type { Embedder } from "../../embedders/embedder.interface.js";
 import type { VectorStore } from "../../vector-stores/vector-store.interface.js";
 import type { Reranker } from "../../rerankers/reranker.interface.js";
+import type { PipelineLLM } from "./llm.interface.js";
 import { InMemoryVectorStore } from "../../vector-stores/in-memory.js";
 import type { Retriever } from "../retriever.interface.js";
 import {
   type PipelineConfig,
   type SearchConfig,
+  type QueryConfig,
   type RefinementStepConfig,
   DEFAULT_SEARCH_CONFIG,
+  DEFAULT_QUERY_CONFIG,
   computeIndexConfigHash,
 } from "./config.js";
 import type { ScoredChunk } from "./types.js";
@@ -28,6 +31,7 @@ export interface PipelineRetrieverDeps {
   readonly embedder: Embedder;
   readonly vectorStore?: VectorStore;
   readonly reranker?: Reranker;
+  readonly llm?: PipelineLLM;
   /**
    * Number of chunks to embed per API call during the INDEX stage.
    * Increase for throughput when your embedding provider allows large
@@ -91,6 +95,8 @@ export class PipelineRetriever implements Retriever {
   private readonly _chunker: PositionAwareChunker;
   private readonly _vectorStore: VectorStore;
   private readonly _reranker: Reranker | undefined;
+  private readonly _queryConfig: QueryConfig;
+  private readonly _llm: PipelineLLM | undefined;
 
   private readonly _searchStrategy: SearchStrategy;
   private readonly _searchStrategyDeps: SearchStrategyDeps;
@@ -108,6 +114,8 @@ export class PipelineRetriever implements Retriever {
     const embedder = deps.embedder;
     this._vectorStore = deps.vectorStore ?? new InMemoryVectorStore();
     this._reranker = deps.reranker;
+    this._queryConfig = config.query ?? DEFAULT_QUERY_CONFIG;
+    this._llm = deps.llm;
     const batchSize = deps.embeddingBatchSize ?? 100;
 
     // Build the strategy object from declarative config
@@ -124,6 +132,14 @@ export class PipelineRetriever implements Retriever {
     if (hasRerankStep && !this._reranker) {
       throw new Error(
         'PipelineRetriever: refinement includes "rerank" step but no reranker was provided in deps.',
+      );
+    }
+
+    // Validate: LLM-requiring query strategies need an LLM dependency
+    const llmStrategies = ["hyde", "multi-query", "step-back", "rewrite"];
+    if (llmStrategies.includes(this._queryConfig.strategy) && !this._llm) {
+      throw new Error(
+        `PipelineRetriever: query strategy "${this._queryConfig.strategy}" requires an LLM but none was provided in deps.`,
       );
     }
   }
