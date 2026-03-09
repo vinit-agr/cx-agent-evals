@@ -1870,238 +1870,107 @@ All async chunkers produce the same `PositionAwareChunk[]` output with accurate 
 
 ---
 
-## Slice 6 — Named Presets
+## Slice 6 — Named Presets (Simplified)
 
-**File**: `packages/eval-lib/src/experiments/presets.ts` — extend the existing pattern.
+**Key insight:** The Preset Registry (`src/registry/presets.ts`) already defines all 24 preset configs with full metadata. Instead of duplicating config constants in `experiments/presets.ts`, Slice 6 rewires the `createPresetRetriever` factory to pull configs directly from the registry. This eliminates duplication and makes the registry the **single source of truth** for preset definitions.
 
-The current file has individual config constants + a `PRESET_CONFIGS` map + `createPresetRetriever` factory. We extend this by:
+```
+BEFORE (duplication):
+  registry/presets.ts          experiments/presets.ts
+  +-----------------------+    +---------------------------+
+  | PresetEntry {         |    | BASELINE_VECTOR_RAG_CONFIG|
+  |   id, name, desc,     |    | BM25_CONFIG               |
+  |   config: { ... },    |    | HYBRID_CONFIG             |  <-- same configs
+  |   status, complexity  |    | HYBRID_RERANKED_CONFIG    |      duplicated!
+  | }                     |    |                           |
+  | x 24 entries          |    | PRESET_CONFIGS map (4)    |
+  +-----------------------+    | createPresetRetriever()   |
+         |                     +---------------------------+
+         v
+    frontend wizard                  runtime factory
 
-1. Adding new config constants
-2. Adding them to the `PRESET_CONFIGS` map
-3. Widening the factory's `presetName` union type
 
-```typescript
-// === EXISTING (keep exactly as-is) ===
-
-export const BASELINE_VECTOR_RAG_CONFIG: PipelineConfig = {
-  name: "baseline-vector-rag",
-  index: { strategy: "plain" },
-  search: { strategy: "dense" },
-};
-
-export const BM25_CONFIG: PipelineConfig = { ... };
-export const HYBRID_CONFIG: PipelineConfig = { ... };
-export const HYBRID_RERANKED_CONFIG: PipelineConfig = { ... };
-
-// === NEW PRESET CONFIGS ===
-
-export const DENSE_RERANKED_CONFIG: PipelineConfig = {
-  name: "dense-reranked",
-  index: { strategy: "plain" },
-  search: { strategy: "dense" },
-  refinement: [{ type: "rerank" }],
-};
-
-export const BM25_RERANKED_CONFIG: PipelineConfig = {
-  name: "bm25-reranked",
-  index: { strategy: "plain" },
-  search: { strategy: "bm25" },
-  refinement: [{ type: "rerank" }],
-};
-
-export const HYBRID_RRF_CONFIG: PipelineConfig = {
-  name: "hybrid-rrf",
-  index: { strategy: "plain" },
-  search: { strategy: "hybrid", fusionMethod: "rrf", candidateMultiplier: 4 },
-};
-
-export const HYBRID_RRF_RERANKED_CONFIG: PipelineConfig = {
-  name: "hybrid-rrf-reranked",
-  index: { strategy: "plain" },
-  search: { strategy: "hybrid", fusionMethod: "rrf", candidateMultiplier: 4 },
-  refinement: [{ type: "rerank" }],
-};
-
-export const OPENCLAW_STYLE_CONFIG: PipelineConfig = {
-  name: "openclaw-style",
-  index: { strategy: "plain", chunkSize: 400, chunkOverlap: 80 },
-  search: { strategy: "hybrid", denseWeight: 0.7, sparseWeight: 0.3, fusionMethod: "weighted", candidateMultiplier: 4 },
-  refinement: [{ type: "threshold", minScore: 0.35 }],
-};
-
-export const HYDE_DENSE_CONFIG: PipelineConfig = {
-  name: "hyde-dense",
-  index: { strategy: "plain" },
-  query: { strategy: "hyde" },
-  search: { strategy: "dense" },
-};
-
-export const HYDE_HYBRID_CONFIG: PipelineConfig = {
-  name: "hyde-hybrid",
-  index: { strategy: "plain" },
-  query: { strategy: "hyde" },
-  search: { strategy: "hybrid", denseWeight: 0.7, sparseWeight: 0.3, candidateMultiplier: 4 },
-};
-
-export const HYDE_HYBRID_RERANKED_CONFIG: PipelineConfig = {
-  name: "hyde-hybrid-reranked",
-  index: { strategy: "plain" },
-  query: { strategy: "hyde" },
-  search: { strategy: "hybrid", denseWeight: 0.7, sparseWeight: 0.3, candidateMultiplier: 4 },
-  refinement: [{ type: "rerank" }],
-};
-
-export const MULTI_QUERY_DENSE_CONFIG: PipelineConfig = {
-  name: "multi-query-dense",
-  index: { strategy: "plain" },
-  query: { strategy: "multi-query", numQueries: 3 },
-  search: { strategy: "dense" },
-  refinement: [{ type: "dedup" }],
-};
-
-export const MULTI_QUERY_HYBRID_CONFIG: PipelineConfig = {
-  name: "multi-query-hybrid",
-  index: { strategy: "plain" },
-  query: { strategy: "multi-query", numQueries: 3 },
-  search: { strategy: "hybrid", denseWeight: 0.7, sparseWeight: 0.3, candidateMultiplier: 4 },
-  refinement: [{ type: "dedup" }, { type: "rerank" }],
-};
-
-export const CONTEXTUAL_DENSE_CONFIG: PipelineConfig = {
-  name: "contextual-dense",
-  index: { strategy: "contextual" },
-  search: { strategy: "dense" },
-};
-
-export const CONTEXTUAL_HYBRID_CONFIG: PipelineConfig = {
-  name: "contextual-hybrid",
-  index: { strategy: "contextual" },
-  search: { strategy: "hybrid", denseWeight: 0.7, sparseWeight: 0.3, candidateMultiplier: 4 },
-};
-
-export const ANTHROPIC_BEST_CONFIG: PipelineConfig = {
-  name: "anthropic-best",
-  index: { strategy: "contextual" },
-  search: { strategy: "hybrid", denseWeight: 0.7, sparseWeight: 0.3, candidateMultiplier: 4 },
-  refinement: [{ type: "rerank" }],
-};
-
-export const PARENT_CHILD_DENSE_CONFIG: PipelineConfig = {
-  name: "parent-child-dense",
-  index: { strategy: "parent-child", childChunkSize: 200, parentChunkSize: 1000 },
-  search: { strategy: "dense" },
-};
-
-export const DIVERSE_HYBRID_CONFIG: PipelineConfig = {
-  name: "diverse-hybrid",
-  index: { strategy: "plain" },
-  search: { strategy: "hybrid", denseWeight: 0.7, sparseWeight: 0.3, candidateMultiplier: 4 },
-  refinement: [{ type: "mmr", lambda: 0.5 }],
-};
-
-export const STEP_BACK_HYBRID_CONFIG: PipelineConfig = {
-  name: "step-back-hybrid",
-  index: { strategy: "plain" },
-  query: { strategy: "step-back", includeOriginal: true },
-  search: { strategy: "hybrid", denseWeight: 0.7, sparseWeight: 0.3, candidateMultiplier: 4 },
-  refinement: [{ type: "dedup" }, { type: "rerank" }],
-};
-
-export const PREMIUM_CONFIG: PipelineConfig = {
-  name: "premium",
-  index: { strategy: "contextual" },
-  query: { strategy: "multi-query", numQueries: 3 },
-  search: { strategy: "hybrid", candidateMultiplier: 5 },
-  refinement: [{ type: "dedup" }, { type: "rerank" }, { type: "threshold", minScore: 0.3 }],
-};
-
-export const SUMMARY_DENSE_CONFIG: PipelineConfig = {
-  name: "summary-dense",
-  index: { strategy: "summary" },
-  search: { strategy: "dense" },
-};
-
-export const REWRITE_HYBRID_CONFIG: PipelineConfig = {
-  name: "rewrite-hybrid",
-  index: { strategy: "plain" },
-  query: { strategy: "rewrite" },
-  search: { strategy: "hybrid", denseWeight: 0.7, sparseWeight: 0.3, candidateMultiplier: 4 },
-};
-
-export const REWRITE_HYBRID_RERANKED_CONFIG: PipelineConfig = {
-  name: "rewrite-hybrid-reranked",
-  index: { strategy: "plain" },
-  query: { strategy: "rewrite" },
-  search: { strategy: "hybrid", denseWeight: 0.7, sparseWeight: 0.3, candidateMultiplier: 4 },
-  refinement: [{ type: "rerank" }],
-};
-
-// === UPDATED PRESET MAP ===
-
-const PRESET_CONFIGS = {
-  // Existing
-  "baseline-vector-rag": BASELINE_VECTOR_RAG_CONFIG,
-  "bm25": BM25_CONFIG,
-  "hybrid": HYBRID_CONFIG,
-  "hybrid-reranked": HYBRID_RERANKED_CONFIG,
-  // New — Dense variants
-  "dense-reranked": DENSE_RERANKED_CONFIG,
-  // New — BM25 variants
-  "bm25-reranked": BM25_RERANKED_CONFIG,
-  // New — Hybrid variants
-  "hybrid-rrf": HYBRID_RRF_CONFIG,
-  "hybrid-rrf-reranked": HYBRID_RRF_RERANKED_CONFIG,
-  // New — OpenClaw-style
-  "openclaw-style": OPENCLAW_STYLE_CONFIG,
-  // New — HyDE variants
-  "hyde-dense": HYDE_DENSE_CONFIG,
-  "hyde-hybrid": HYDE_HYBRID_CONFIG,
-  "hyde-hybrid-reranked": HYDE_HYBRID_RERANKED_CONFIG,
-  // New — Multi-Query variants
-  "multi-query-dense": MULTI_QUERY_DENSE_CONFIG,
-  "multi-query-hybrid": MULTI_QUERY_HYBRID_CONFIG,
-  // New — Contextual variants (Anthropic's approach)
-  "contextual-dense": CONTEXTUAL_DENSE_CONFIG,
-  "contextual-hybrid": CONTEXTUAL_HYBRID_CONFIG,
-  "anthropic-best": ANTHROPIC_BEST_CONFIG,
-  // New — Parent-Child
-  "parent-child-dense": PARENT_CHILD_DENSE_CONFIG,
-  // New — Diversity-focused
-  "diverse-hybrid": DIVERSE_HYBRID_CONFIG,
-  // New — Step-Back
-  "step-back-hybrid": STEP_BACK_HYBRID_CONFIG,
-  // New — Rewrite variants
-  "rewrite-hybrid": REWRITE_HYBRID_CONFIG,
-  "rewrite-hybrid-reranked": REWRITE_HYBRID_RERANKED_CONFIG,
-  // New — Summary index
-  "summary-dense": SUMMARY_DENSE_CONFIG,
-  // New — Premium (everything)
-  "premium": PREMIUM_CONFIG,
-} as const;
-
-export type PresetName = keyof typeof PRESET_CONFIGS;
-
-// createPresetRetriever signature UPDATED to accept wider union:
-export function createPresetRetriever(
-  presetName: PresetName,
-  deps: PipelinePresetDeps,
-  overrides?: Partial<PipelineConfig>,
-): PipelineRetriever;
+AFTER (single source of truth):
+  registry/presets.ts          experiments/presets.ts
+  +-----------------------+    +---------------------------+
+  | PresetEntry {         |    | (keep 4 legacy configs    |
+  |   id, name, desc,     |--->|  for backward compat)     |
+  |   config: { ... },    |    |                           |
+  |   status, complexity  |    | createPresetRetriever()   |
+  | }                     |    |   reads config from       |
+  | x 24 entries          |    |   PRESET_REGISTRY         |
+  +-----------------------+    | PresetName derived from   |
+         |                     |   available registry IDs  |
+         v                     +---------------------------+
+    frontend wizard                  runtime factory
 ```
 
-**Note on PipelinePresetDeps**: Presets that require LLM (hyde-*, multi-query-*, step-back-*, contextual-*, anthropic-best, premium) need the caller to also provide `llm` in deps. The `PipelinePresetDeps` interface should be extended:
+**Files:**
+- Modify: `src/experiments/presets.ts` — rewire factory to use registry, derive PresetName
+- Modify: `src/experiments/index.ts` — export PresetName
+- Modify: `src/index.ts` — export PresetName
+
+**Changes to `experiments/presets.ts`:**
 
 ```typescript
-export interface PipelinePresetDeps {
-  readonly chunker: PositionAwareChunker;
-  readonly embedder: Embedder;
-  readonly vectorStore?: VectorStore;
-  readonly reranker?: Reranker;
-  readonly llm?: PipelineLLM;  // NEW — required for LLM-based strategies
+import { PRESET_REGISTRY } from "../registry/presets.js";
+import type { PipelineConfig } from "../retrievers/pipeline/config.js";
+import { PipelineRetriever } from "../retrievers/pipeline/pipeline-retriever.js";
+// ... existing interface imports ...
+
+// --- Keep existing 4 config constants for backward compatibility ---
+export const BASELINE_VECTOR_RAG_CONFIG: PipelineConfig = { /* unchanged */ };
+export const BM25_CONFIG: PipelineConfig = { /* unchanged */ };
+export const HYBRID_CONFIG: PipelineConfig = { /* unchanged */ };
+export const HYBRID_RERANKED_CONFIG: PipelineConfig = { /* unchanged */ };
+
+// --- Build runtime map from registry (available presets only) ---
+const AVAILABLE_PRESET_MAP = new Map(
+  PRESET_REGISTRY
+    .filter((p) => p.status === "available")
+    .map((p) => [p.id, p.config]),
+);
+
+/** Union of all available preset names, derived from the registry. */
+export type PresetName = (typeof PRESET_REGISTRY)[number] extends infer E
+  ? E extends { status: "available"; id: infer Id }
+    ? Id
+    : never
+  : never;
+
+// --- Rewired factory — reads config from registry ---
+export function createPresetRetriever(
+  presetName: string,
+  deps: PipelinePresetDeps,
+  overrides?: Partial<PipelineConfig>,
+): PipelineRetriever {
+  const base = AVAILABLE_PRESET_MAP.get(presetName);
+  if (!base) {
+    throw new Error(`Unknown or unavailable preset: "${presetName}"`);
+  }
+  const config: PipelineConfig = {
+    ...base,
+    ...overrides,
+    name: overrides?.name ?? base.name,
+  };
+  return new PipelineRetriever(config, deps);
 }
 ```
 
-The constructor validation in `PipelineRetriever` catches the missing `llm` case.
+**What stays the same:**
+- `PipelinePresetDeps` interface (already has `llm?: PipelineLLM`)
+- Legacy convenience wrappers (`createBaselineVectorRagRetriever`, etc.) — kept for backward compat
+- 4 existing exported config constants — kept for backward compat
+
+**What changes:**
+- No new config constants (eliminated ~200 lines of duplication)
+- `createPresetRetriever` reads from registry instead of a local map
+- `PresetName` derived from registry `"available"` entries
+- As each slice marks presets `"available"` in the registry, they automatically become usable via the factory
+
+**Note on PipelinePresetDeps**: `llm?: PipelineLLM` already exists on the interface (added in Slice 3). Presets that require LLM or reranker deps are validated by `PipelineRetriever`'s constructor — no additional validation needed in the factory.
+
+**Registry status updates (same slice):** After confirming all strategies for a preset are implemented, flip its status from `"coming-soon"` to `"available"` in `registry/presets.ts` and remove its `comingSoonConfig()` wrapper. This is the only step needed to "enable" a new preset — the factory picks it up automatically.
 
 ---
 
