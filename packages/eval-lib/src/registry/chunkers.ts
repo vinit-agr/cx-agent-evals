@@ -165,7 +165,7 @@ export const CHUNKER_REGISTRY: readonly RegistryEntry[] = [
     name: "Semantic",
     description:
       "Uses embeddings to detect topic shifts and splits at semantic boundaries. Produces semantically coherent chunks at the cost of requiring an embedder.",
-    status: "coming-soon",
+    status: "available",
     tags: ["async", "requires-embedder"],
     options: [
       {
@@ -194,7 +194,7 @@ export const CHUNKER_REGISTRY: readonly RegistryEntry[] = [
     name: "Cluster Semantic",
     description:
       "Embeds small segments then clusters them to form topic-coherent chunks. Good when documents mix multiple topics without clear structural separators.",
-    status: "coming-soon",
+    status: "available",
     tags: ["async", "requires-embedder"],
     options: [
       {
@@ -223,7 +223,7 @@ export const CHUNKER_REGISTRY: readonly RegistryEntry[] = [
     name: "LLM Semantic",
     description:
       "Uses an LLM to identify natural topic boundaries in text. Produces the most semantically meaningful chunks but is the slowest and most expensive approach.",
-    status: "coming-soon",
+    status: "available",
     tags: ["async", "requires-llm"],
     options: [
       {

@@ -36,7 +36,7 @@ export const REFINEMENT_STEP_REGISTRY: readonly RegistryEntry[] = [
     name: "Deduplication",
     description:
       "Removes duplicate or near-duplicate chunks from the result set. Prevents redundant content from consuming result slots.",
-    status: "coming-soon",
+    status: "available",
     tags: ["filtering"],
     options: [
       {
@@ -77,7 +77,7 @@ export const REFINEMENT_STEP_REGISTRY: readonly RegistryEntry[] = [
     name: "MMR",
     description:
       "Maximal Marginal Relevance: reranks results to balance relevance and diversity. Reduces redundancy by penalizing chunks similar to already-selected ones.",
-    status: "coming-soon",
+    status: "available",
     tags: ["diversity"],
     options: [
       {
@@ -97,7 +97,7 @@ export const REFINEMENT_STEP_REGISTRY: readonly RegistryEntry[] = [
     name: "Expand Context",
     description:
       "Expands each retrieved chunk by including surrounding characters from the original document. Provides additional context without changing the retrieval itself.",
-    status: "coming-soon",
+    status: "available",
     tags: ["context"],
     options: [
       {

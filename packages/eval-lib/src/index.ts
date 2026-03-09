@@ -37,6 +37,10 @@ export {
 export type { Chunker, PositionAwareChunker, RecursiveCharacterChunkerOptions, SentenceChunkerOptions, TokenChunkerOptions, MarkdownChunkerOptions } from "./chunkers/index.js";
 export { isPositionAwareChunker, RecursiveCharacterChunker, SentenceChunker, TokenChunker, MarkdownChunker } from "./chunkers/index.js";
 
+// Async chunkers
+export type { AsyncPositionAwareChunker, SemanticChunkerOptions, ClusterSemanticChunkerOptions, LLMSemanticChunkerOptions } from "./chunkers/index.js";
+export { isAsyncPositionAwareChunker, SemanticChunker, ClusterSemanticChunker, LLMSemanticChunker } from "./chunkers/index.js";
+
 // Embedder
 export type { Embedder } from "./embedders/index.js";
 export { OpenAIEmbedder } from "./embedders/index.js";
@@ -94,6 +98,11 @@ export type {
   BM25SearchConfig,
   HybridSearchConfig,
   RefinementStepConfig,
+  RerankRefinementStep,
+  ThresholdRefinementStep,
+  DedupRefinementStep,
+  MmrRefinementStep,
+  ExpandContextRefinementStep,
   ScoredChunk,
   PipelineLLM,
 } from "./retrievers/index.js";
