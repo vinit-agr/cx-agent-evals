@@ -27,6 +27,9 @@ export type {
   RefinementStepConfig,
   RerankRefinementStep,
   ThresholdRefinementStep,
+  DedupRefinementStep,
+  MmrRefinementStep,
+  ExpandContextRefinementStep,
 } from "./config.js";
 export { BM25SearchIndex, BM25SearchStrategy } from "./search/index.js";
 export { DenseSearchStrategy, assignRankScores } from "./search/index.js";
@@ -39,6 +42,7 @@ export {
   rrfFuseMultiple,
 } from "./search/index.js";
 export { applyThresholdFilter } from "./refinement/index.js";
+export { applyDedup, applyMmr, applyExpandContext } from "./refinement/index.js";
 
 // LLM interface
 export type { PipelineLLM } from "./llm.interface.js";

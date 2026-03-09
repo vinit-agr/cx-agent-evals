@@ -176,7 +176,32 @@ export interface ThresholdRefinementStep {
   readonly minScore: number;
 }
 
-export type RefinementStepConfig = RerankRefinementStep | ThresholdRefinementStep;
+export interface DedupRefinementStep {
+  readonly type: "dedup";
+  /** @default "overlap" */
+  readonly method?: "exact" | "overlap";
+  /** Minimum overlap ratio to consider chunks duplicates. @default 0.5 */
+  readonly overlapThreshold?: number;
+}
+
+export interface MmrRefinementStep {
+  readonly type: "mmr";
+  /** Trade-off: 1.0 = pure relevance, 0.0 = pure diversity. @default 0.7 */
+  readonly lambda?: number;
+}
+
+export interface ExpandContextRefinementStep {
+  readonly type: "expand-context";
+  /** Characters to include before and after each chunk. @default 500 */
+  readonly windowChars?: number;
+}
+
+export type RefinementStepConfig =
+  | RerankRefinementStep
+  | ThresholdRefinementStep
+  | DedupRefinementStep
+  | MmrRefinementStep
+  | ExpandContextRefinementStep;
 
 // ---------------------------------------------------------------------------
 // Pipeline configuration (composes all four stages)
