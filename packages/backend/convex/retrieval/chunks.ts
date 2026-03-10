@@ -117,8 +117,71 @@ export const getChunksByDocConfig = internalQuery({
 });
 
 /**
+ * Check if any chunks exist for a (documentId, indexConfigHash).
+ * Reads at most 1 row — avoids the 16MB limit entirely.
+ */
+export const hasChunksForDocConfig = internalQuery({
+  args: {
+    documentId: v.id("documents"),
+    indexConfigHash: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const first = await ctx.db
+      .query("documentChunks")
+      .withIndex("by_doc_config", (q) =>
+        q
+          .eq("documentId", args.documentId)
+          .eq("indexConfigHash", args.indexConfigHash),
+      )
+      .first();
+    return { exists: first !== null };
+  },
+});
+
+/**
+ * Read one page of chunks for a (documentId, indexConfigHash).
+ *
+ * Returns the chunks in the page, whether more pages exist, and a cursor
+ * for the next page. Designed to be called in a loop from an ACTION so that
+ * each ctx.runQuery() call gets its own 16MB read budget.
+ *
+ * Page size is kept small (default 100) so that even pages full of embedded
+ * chunks (each ~13KB with the 1536-dim vector) stay well under 16MB.
+ */
+export const getChunksByDocConfigPage = internalQuery({
+  args: {
+    documentId: v.id("documents"),
+    indexConfigHash: v.string(),
+    cursor: v.union(v.string(), v.null()),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const numItems = args.pageSize ?? 100;
+    const page = await ctx.db
+      .query("documentChunks")
+      .withIndex("by_doc_config", (q) =>
+        q
+          .eq("documentId", args.documentId)
+          .eq("indexConfigHash", args.indexConfigHash),
+      )
+      .paginate({ numItems, cursor: args.cursor as any ?? null });
+
+    return {
+      chunks: page.page,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
+
+/**
  * Get chunks for a (documentId, indexConfigHash) where embedding is not set.
  * Used to resume Phase B after a crash.
+ *
+ * @deprecated Use getChunksByDocConfigPage from an action loop instead,
+ * filtering for unembedded chunks at the action level. This query can hit
+ * the 16MB read limit on large documents because it scans all chunks
+ * (including embedded ones with 12KB vectors) within a single execution.
  */
 export const getUnembeddedChunks = internalQuery({
   args: {
