@@ -10,6 +10,26 @@ import {
 import { EMBED_BATCH_SIZE, CLEANUP_BATCH_SIZE } from "rag-evaluation-system/shared";
 import { createEmbedder } from "rag-evaluation-system/llm";
 
+/** Retry a mutation that may fail with TooManyWrites under concurrent load. */
+async function retryOnWriteLimit<T>(
+  fn: () => Promise<T>,
+  maxRetries = 4,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const msg = typeof err?.message === "string" ? err.message : String(err);
+      if (attempt < maxRetries && msg.includes("TooManyWrites")) {
+        // Exponential backoff: 500ms, 1s, 2s, 4s
+        await new Promise((r) => setTimeout(r, 500 * 2 ** attempt));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
+
 // ─── Two-Phase Document Indexing Action ───
 
 /**
@@ -33,23 +53,18 @@ export const indexDocument = internalAction({
     chunksInserted: number;
     chunksEmbedded: number;
   }> => {
-    // ── Idempotency check: query existing chunks ──
-    const existingChunks: any[] = await ctx.runQuery(
-      internal.retrieval.chunks.getChunksByDocConfig,
+    // ── Idempotency check: single-row probe (avoids 16MB read limit) ──
+    const { exists } = await ctx.runQuery(
+      internal.retrieval.chunks.hasChunksForDocConfig,
       {
         documentId: args.documentId,
         indexConfigHash: args.indexConfigHash,
       },
     );
 
-    if (existingChunks.length > 0) {
-      const allEmbedded = existingChunks.every(
-        (c: any) => c.embedding !== undefined,
-      );
-      if (allEmbedded) {
-        return { skipped: true, chunksInserted: 0, chunksEmbedded: 0 };
-      }
-      // Some chunks exist but not all embedded — skip to Phase B
+    if (exists) {
+      // Chunks exist — skip Phase A, go to Phase B.
+      // If all are already embedded, Phase B finds nothing and returns early.
     } else {
       // ── PHASE A: Chunk & Store (pure compute, atomic) ──
       const doc = await ctx.runQuery(internal.crud.documents.getInternal, {
@@ -84,14 +99,38 @@ export const indexDocument = internalAction({
     }
 
     // ── PHASE B: Embed in Batches (API calls, resumable) ──
-    const unembedded = await ctx.runQuery(internal.retrieval.chunks.getUnembeddedChunks, {
-      documentId: args.documentId,
-      indexConfigHash: args.indexConfigHash,
-    });
+    //
+    // Collect unembedded chunks via paginated queries — each ctx.runQuery()
+    // gets its own 16MB read budget, avoiding the limit that .collect() hits
+    // on large documents where embedded chunks carry 12KB vectors each.
+    const unembedded: any[] = [];
+    let totalChunks = 0;
+    let pageCursor: string | null = null;
+    let pageDone = false;
+
+    while (!pageDone) {
+      const page: any = await ctx.runQuery(
+        internal.retrieval.chunks.getChunksByDocConfigPage,
+        {
+          documentId: args.documentId,
+          indexConfigHash: args.indexConfigHash,
+          cursor: pageCursor,
+          pageSize: 100,
+        },
+      );
+      totalChunks += page.chunks.length;
+      for (const chunk of page.chunks) {
+        if (chunk.embedding === undefined) {
+          unembedded.push(chunk);
+        }
+      }
+      pageDone = page.isDone;
+      pageCursor = page.continueCursor;
+    }
 
     if (unembedded.length === 0) {
-      // All chunks already embedded (possible if Phase A was from a previous run)
-      return { skipped: false, chunksInserted: 0, chunksEmbedded: 0 };
+      // All chunks already embedded (fully indexed on a previous run)
+      return { skipped: true, chunksInserted: 0, chunksEmbedded: 0 };
     }
 
     const embedder = createEmbedder(args.embeddingModel);
@@ -105,26 +144,23 @@ export const indexDocument = internalAction({
       // but Phase A is skipped and completed batches are skipped
       const embeddings = await embedder.embed(texts);
 
-      // Patch this batch's embeddings — checkpoint saved
-      await ctx.runMutation(internal.retrieval.chunks.patchChunkEmbeddings, {
-        patches: batch.map((c: any, idx: number) => ({
-          chunkId: c._id,
-          embedding: embeddings[idx],
-        })),
-      });
+      // Patch this batch's embeddings — checkpoint saved.
+      // Retry with backoff if concurrent actions saturate write throughput.
+      await retryOnWriteLimit(() =>
+        ctx.runMutation(internal.retrieval.chunks.patchChunkEmbeddings, {
+          patches: batch.map((c: any, idx: number) => ({
+            chunkId: c._id,
+            embedding: embeddings[idx],
+          })),
+        }),
+      );
 
       totalEmbedded += batch.length;
     }
 
-    // Count total chunks for this document (including previously embedded)
-    const allChunks: any[] = await ctx.runQuery(internal.retrieval.chunks.getChunksByDocConfig, {
-      documentId: args.documentId,
-      indexConfigHash: args.indexConfigHash,
-    });
-
     return {
       skipped: false,
-      chunksInserted: allChunks.length,
+      chunksInserted: totalChunks,
       chunksEmbedded: totalEmbedded,
     };
   },
