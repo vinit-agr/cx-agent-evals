@@ -301,21 +301,37 @@ function DangerZone({
         <h4 className="text-xs font-medium text-red-400 uppercase tracking-wider mb-3">
           Danger Zone
         </h4>
-        <div className="flex items-center gap-2">
+        <div className="space-y-3">
           {hasIndex && (
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-text">Delete Index</p>
+                <p className="text-[11px] text-text-dim">
+                  Resets retriever to configuring — needs re-indexing
+                </p>
+              </div>
+              <button
+                onClick={() => setConfirmAction("index")}
+                className="text-xs px-3 py-1.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+              >
+                Delete Index
+              </button>
+            </div>
+          )}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-text">Delete Retriever</p>
+              <p className="text-[11px] text-text-dim">
+                Permanently removes this retriever
+              </p>
+            </div>
             <button
-              onClick={() => setConfirmAction("index")}
+              onClick={() => setConfirmAction("retriever")}
               className="text-xs px-3 py-1.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
             >
-              Delete Index
+              Delete Retriever
             </button>
-          )}
-          <button
-            onClick={() => setConfirmAction("retriever")}
-            className="text-xs px-3 py-1.5 rounded border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
-          >
-            Delete Retriever
-          </button>
+          </div>
         </div>
       </section>
 
