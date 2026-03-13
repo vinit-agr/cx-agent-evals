@@ -4,6 +4,8 @@ import { useQuery } from "convex/react";
 import { api } from "@/lib/convex";
 import type { Id } from "@convex/_generated/dataModel";
 import { MarkdownViewer } from "@/components/MarkdownViewer";
+import { resolveConfig } from "@/lib/pipeline-types";
+import type { PipelineConfig } from "@/lib/pipeline-types";
 import { useState, useEffect, useMemo, useCallback } from "react";
 
 // ---------------------------------------------------------------------------
@@ -790,6 +792,35 @@ function ChunkInspectorPanel({
 }
 
 // ---------------------------------------------------------------------------
+// Index Config Banner
+// ---------------------------------------------------------------------------
+
+function IndexConfigBanner({ retrieverConfig }: { retrieverConfig: unknown }) {
+  const config = resolveConfig(retrieverConfig as PipelineConfig);
+  const { chunkSize, chunkOverlap, embeddingModel } = config.index;
+  const embedShort = embeddingModel.replace("text-embedding-", "");
+
+  return (
+    <div className="px-3 py-2 border-b border-border flex-shrink-0">
+      <div className="bg-bg-surface border border-border rounded-lg p-2">
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-text-dim">
+          <span className="text-text-muted font-medium">Index</span>
+          <span>
+            Chunking: <span className="text-text-muted">recursive</span>
+          </span>
+          <span>
+            Size: <span className="text-text-muted">{chunkSize}/{chunkOverlap}</span>
+          </span>
+          <span>
+            Embedding: <span className="text-text-muted">{embedShort}</span>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -810,61 +841,64 @@ export function IndexTab({ retriever, onStartIndexing }: IndexTabProps) {
   const isIndexing = retriever.status === "indexing";
 
   return (
-    <div className="flex h-full border-t border-border">
-      {/* Left: Document list */}
-      <div className="w-[200px] flex-shrink-0 border-r border-border overflow-hidden">
-        <div className="px-3 py-2 border-b border-border bg-bg-elevated/50">
-          <span className="text-[11px] text-text-muted font-medium">
-            Documents
-          </span>
+    <div className="flex flex-col h-full border-t border-border">
+      <IndexConfigBanner retrieverConfig={retriever.retrieverConfig} />
+      <div className="flex flex-1 min-h-0">
+        {/* Left: Document list */}
+        <div className="w-[200px] flex-shrink-0 border-r border-border overflow-hidden">
+          <div className="px-3 py-2 border-b border-border bg-bg-elevated/50">
+            <span className="text-[11px] text-text-muted font-medium">
+              Documents
+            </span>
+          </div>
+          <DocumentListPanel
+            kbId={retriever.kbId}
+            selectedDocId={selectedDocId}
+            onSelect={setSelectedDocId}
+          />
         </div>
-        <DocumentListPanel
-          kbId={retriever.kbId}
-          selectedDocId={selectedDocId}
-          onSelect={setSelectedDocId}
-        />
-      </div>
 
-      {/* Center: Document viewer */}
-      <div className="flex-1 min-w-0 overflow-hidden">
-        {selectedDocId ? (
-          <DocumentViewerPanel
-            kbId={retriever.kbId}
-            indexConfigHash={retriever.indexConfigHash}
-            documentId={selectedDocId}
-            selectedChunkIndex={selectedChunkIndex}
-            onSelectChunk={setSelectedChunkIndex}
-            isReady={isReady}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-xs text-text-dim">
-            Select a document to view its content.
-          </div>
-        )}
-      </div>
+        {/* Center: Document viewer */}
+        <div className="flex-1 min-w-0 overflow-hidden">
+          {selectedDocId ? (
+            <DocumentViewerPanel
+              kbId={retriever.kbId}
+              indexConfigHash={retriever.indexConfigHash}
+              documentId={selectedDocId}
+              selectedChunkIndex={selectedChunkIndex}
+              onSelectChunk={setSelectedChunkIndex}
+              isReady={isReady}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-xs text-text-dim">
+              Select a document to view its content.
+            </div>
+          )}
+        </div>
 
-      {/* Right: Chunk inspector OR Start Indexing panel */}
-      <div className="w-[300px] flex-shrink-0 border-l border-border overflow-hidden">
-        {!isReady ? (
-          <IndexingActionPanel
-            status={retriever.status}
-            isIndexing={isIndexing}
-            chunkCount={retriever.chunkCount}
-            onStartIndexing={onStartIndexing}
-          />
-        ) : selectedDocId ? (
-          <ChunkInspectorWrapper
-            kbId={retriever.kbId}
-            indexConfigHash={retriever.indexConfigHash}
-            documentId={selectedDocId}
-            selectedChunkIndex={selectedChunkIndex}
-            onSelectChunk={setSelectedChunkIndex}
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-xs text-text-dim px-4 text-center">
-            Select a document and click a chunk pill to inspect.
-          </div>
-        )}
+        {/* Right: Chunk inspector OR Start Indexing panel */}
+        <div className="w-[300px] flex-shrink-0 border-l border-border overflow-hidden">
+          {!isReady ? (
+            <IndexingActionPanel
+              status={retriever.status}
+              isIndexing={isIndexing}
+              chunkCount={retriever.chunkCount}
+              onStartIndexing={onStartIndexing}
+            />
+          ) : selectedDocId ? (
+            <ChunkInspectorWrapper
+              kbId={retriever.kbId}
+              indexConfigHash={retriever.indexConfigHash}
+              documentId={selectedDocId}
+              selectedChunkIndex={selectedChunkIndex}
+              onSelectChunk={setSelectedChunkIndex}
+            />
+          ) : (
+            <div className="flex items-center justify-center h-full text-xs text-text-dim px-4 text-center">
+              Select a document and click a chunk pill to inspect.
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
