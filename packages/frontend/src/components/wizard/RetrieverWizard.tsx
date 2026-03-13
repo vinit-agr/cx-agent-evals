@@ -32,15 +32,8 @@ interface RetrieverWizardProps {
     rerankerOptions?: Record<string, unknown>;
   };
   basePreset?: string;
-  onSave: (config: SavedConfig) => void;
   onCreate: (config: BuiltConfig, name: string) => void;
   onClose: () => void;
-}
-
-interface SavedConfig {
-  name: string;
-  basePreset: string;
-  config: BuiltConfig;
 }
 
 interface BuiltConfig {
@@ -97,7 +90,6 @@ function shortHash(config: BuiltConfig): string {
 export function RetrieverWizard({
   initialConfig,
   basePreset,
-  onSave,
   onCreate,
   onClose,
 }: RetrieverWizardProps) {
@@ -316,16 +308,6 @@ export function RetrieverWizard({
     setCurrentStep(sectionIndex + 1);
   }, []);
 
-  // ---- Save handler ----
-  const handleSave = useCallback(() => {
-    const config = buildConfig();
-    onSave({
-      name,
-      basePreset: selectedPresetId ?? "custom",
-      config,
-    });
-  }, [buildConfig, name, selectedPresetId, onSave]);
-
   // ---- Create handler ----
   const handleCreate = useCallback(() => {
     const config = buildConfig();
@@ -423,8 +405,6 @@ export function RetrieverWizard({
             basePreset={selectedPresetId}
             onNameChange={handleNameChange}
             onEditStep={handleEditStep}
-            onSave={handleSave}
-            onCreate={handleCreate}
           />
         )}
       </div>
@@ -439,13 +419,21 @@ export function RetrieverWizard({
         >
           &larr; Back
         </button>
-        {currentStep < 5 && (
+        {currentStep < 5 ? (
           <button
             type="button"
             onClick={() => setCurrentStep((s) => s + 1)}
             className="text-xs bg-accent text-bg px-3 py-1.5 rounded hover:bg-accent-bright font-medium transition-colors cursor-pointer"
           >
             Next &rarr;
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleCreate}
+            className="text-xs bg-accent text-bg px-3 py-1.5 rounded hover:bg-accent-bright font-medium transition-colors cursor-pointer"
+          >
+            Create Retriever
           </button>
         )}
       </div>

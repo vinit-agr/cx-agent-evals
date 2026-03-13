@@ -260,10 +260,6 @@ function RetrieversPageContent() {
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
             <div className="w-[720px] h-[85vh] bg-bg-elevated border border-border rounded-lg shadow-2xl overflow-hidden flex flex-col">
               <RetrieverWizard
-                onSave={() => {
-                  // No separate "save config" flow — wizard creates directly
-                  setShowWizard(false);
-                }}
                 onCreate={async (config, name) => {
                   if (!selectedKbId) return;
                   try {

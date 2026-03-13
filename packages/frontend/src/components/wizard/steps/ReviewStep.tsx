@@ -34,8 +34,6 @@ interface ReviewStepProps {
   basePreset: string | null;
   onNameChange: (name: string) => void;
   onEditStep: (stepIndex: number) => void;
-  onSave: () => void;
-  onCreate: () => void;
 }
 
 // ---------------------------------------------------------------------------
@@ -99,8 +97,6 @@ export function ReviewStep({
   basePreset,
   onNameChange,
   onEditStep,
-  onSave,
-  onCreate,
 }: ReviewStepProps) {
   const presetName = basePreset
     ? PRESET_REGISTRY.find((p) => p.id === basePreset)?.name ?? basePreset
@@ -214,33 +210,6 @@ export function ReviewStep({
         )}
       </section>
 
-      {/* ---- Actions ---- */}
-      <div className="flex items-center gap-3 pt-2">
-        <button
-          type="button"
-          onClick={onSave}
-          className="
-            flex-1 py-2 text-sm rounded-lg border
-            bg-bg-surface border-border text-text
-            hover:bg-bg-hover
-            transition-colors cursor-pointer
-          "
-        >
-          Save Config
-        </button>
-        <button
-          type="button"
-          onClick={onCreate}
-          className="
-            flex-1 py-2 text-sm rounded-lg font-medium
-            bg-accent text-bg
-            hover:bg-accent-bright
-            transition-colors cursor-pointer
-          "
-        >
-          Create Retriever
-        </button>
-      </div>
     </div>
   );
 }
