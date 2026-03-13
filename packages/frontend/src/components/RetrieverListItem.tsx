@@ -28,8 +28,6 @@ interface RetrieverListItemProps {
   onToggleExpand: () => void;
   onStartIndexing: () => void;
   onCancelIndexing: () => void;
-  onDeleteIndex: () => void;
-  onDelete: () => void;
   onViewFullConfig: () => void;
   /** For playground multi-select mode */
   isCheckboxMode?: boolean;
@@ -151,34 +149,23 @@ function ActionButtons({
   progress,
   onStartIndexing,
   onCancelIndexing,
-  onDeleteIndex,
-  onDelete,
 }: {
   status: string;
   progress?: IndexingProgress;
   onStartIndexing: () => void;
   onCancelIndexing: () => void;
-  onDeleteIndex: () => void;
-  onDelete: () => void;
 }) {
   const primaryBtn =
     "text-[11px] px-2 py-1 rounded border border-accent/30 bg-accent/10 text-accent hover:bg-accent/20 transition-colors cursor-pointer";
   const dangerBtn =
     "text-[11px] px-2 py-1 rounded border border-border text-text-dim hover:text-red-400 hover:border-red-400/30 transition-colors cursor-pointer";
-  const neutralBtn =
-    "text-[11px] px-2 py-1 rounded border border-border text-text-dim hover:text-text transition-colors cursor-pointer";
 
   return (
     <div className="mt-2 flex gap-2 flex-wrap">
       {status === "configuring" && (
-        <>
-          <button onClick={onStartIndexing} className={primaryBtn}>
-            Start Indexing
-          </button>
-          <button onClick={onDelete} className={dangerBtn}>
-            Delete
-          </button>
-        </>
+        <button onClick={onStartIndexing} className={primaryBtn}>
+          Start Indexing
+        </button>
       )}
 
       {status === "indexing" && (
@@ -199,26 +186,10 @@ function ActionButtons({
         </>
       )}
 
-      {status === "ready" && (
-        <>
-          <button onClick={onDeleteIndex} className={neutralBtn}>
-            Delete Index
-          </button>
-          <button onClick={onDelete} className={dangerBtn}>
-            Delete Retriever
-          </button>
-        </>
-      )}
-
       {status === "error" && (
-        <>
-          <button onClick={onStartIndexing} className={primaryBtn}>
-            Retry Indexing
-          </button>
-          <button onClick={onDelete} className={dangerBtn}>
-            Delete
-          </button>
-        </>
+        <button onClick={onStartIndexing} className={primaryBtn}>
+          Retry Indexing
+        </button>
       )}
     </div>
   );
@@ -236,8 +207,6 @@ export function RetrieverListItem({
   onToggleExpand,
   onStartIndexing,
   onCancelIndexing,
-  onDeleteIndex,
-  onDelete,
   onViewFullConfig,
   isCheckboxMode,
   isChecked,
@@ -351,8 +320,6 @@ export function RetrieverListItem({
             progress={progress}
             onStartIndexing={onStartIndexing}
             onCancelIndexing={onCancelIndexing}
-            onDeleteIndex={onDeleteIndex}
-            onDelete={onDelete}
           />
 
           {/* View Full Config button */}

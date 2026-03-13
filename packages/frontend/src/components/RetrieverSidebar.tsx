@@ -54,8 +54,6 @@ function RetrieverListItemWithProgress({
   onToggleExpand: () => void;
   onStartIndexing: () => void;
   onCancelIndexing: () => void;
-  onDeleteIndex: () => void;
-  onDelete: () => void;
   onViewFullConfig: () => void;
   isCheckboxMode?: boolean;
   isChecked?: boolean;
@@ -248,8 +246,6 @@ export function RetrieverSidebar({
                   r.indexingJobId as string | undefined,
                 )
               }
-              onDeleteIndex={() => handleDeleteIndex(r._id)}
-              onDelete={() => handleDelete(r._id)}
               onViewFullConfig={() => setDetailRetrieverId(r._id)}
               isCheckboxMode={isPlaygroundMode}
               isChecked={selectedRetrieverIds.has(r._id)}
