@@ -63,6 +63,40 @@ function Spinner({ className }: { className?: string }) {
   );
 }
 
+/** Index→search interaction note. */
+export function IndexSearchNote({ indexStrategy, indexConfig }: {
+  indexStrategy: string;
+  indexConfig?: Record<string, unknown>;
+}) {
+  if (indexStrategy === "parent-child") {
+    const childSize = (indexConfig?.childChunkSize as number) ?? 200;
+    const parentSize = (indexConfig?.parentChunkSize as number) ?? 1000;
+    return (
+      <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-2 text-[11px] text-blue-400">
+        Search runs on child chunks ({childSize} chars). Matching children are
+        automatically mapped to parent chunks ({parentSize} chars).
+      </div>
+    );
+  }
+  if (indexStrategy === "contextual") {
+    return (
+      <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-2 text-[11px] text-blue-400">
+        Search runs on chunks with a contextual prefix — a few sentences
+        situating the chunk in its document.
+      </div>
+    );
+  }
+  if (indexStrategy === "summary") {
+    return (
+      <div className="bg-blue-500/5 border border-blue-500/20 rounded-lg p-2 text-[11px] text-blue-400">
+        Search runs on LLM-generated summaries. Matching summaries return the
+        original chunk content.
+      </div>
+    );
+  }
+  return null;
+}
+
 /** Strategy display name mapping. */
 function strategyLabel(strategy: string): string {
   switch (strategy) {
@@ -253,11 +287,15 @@ function SearchResultsPanel({
   selectedQueryIndex,
   isSearching,
   staticSearchConfig,
+  indexStrategy,
+  indexConfig,
 }: {
   searchResult: SearchResult | null;
   selectedQueryIndex: number | null;
   isSearching: boolean;
   staticSearchConfig: { strategy: string; k: number; denseWeight?: number; sparseWeight?: number; fusionMethod?: string };
+  indexStrategy: string;
+  indexConfig: Record<string, unknown>;
 }) {
   return (
     <div className="h-full flex flex-col">
@@ -295,6 +333,13 @@ function SearchResultsPanel({
             </span>
           </div>
         </div>
+
+        {/* Index→search interaction note */}
+        {indexStrategy !== "plain" && (
+          <div className="mx-3 mb-3">
+            <IndexSearchNote indexStrategy={indexStrategy} indexConfig={indexConfig} />
+          </div>
+        )}
 
         {/* Spinner */}
         {isSearching && (
@@ -393,6 +438,9 @@ export function QuerySearchTab({
       fusionMethod: (resolved.search as any).fusionMethod as string | undefined,
     } : {}),
   };
+
+  const indexConfig = (retriever.retrieverConfig?.index ?? {}) as Record<string, unknown>;
+  const indexStrategy = (indexConfig.strategy as string) ?? "plain";
 
   const [rewriteResult, setRewriteResult] = useState<RewriteResult | null>(
     null,
@@ -509,6 +557,8 @@ export function QuerySearchTab({
             selectedQueryIndex={selectedQueryIndex}
             isSearching={isSearching}
             staticSearchConfig={staticSearchConfig}
+            indexStrategy={indexStrategy}
+            indexConfig={indexConfig}
           />
         </div>
       </div>

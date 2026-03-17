@@ -418,6 +418,8 @@ export function RetrieverWizard({
             k={k}
             onSearchChange={handleSearchChange}
             onKChange={setK}
+            indexStrategy={indexStrategy}
+            indexConfig={chunkerOptions}
           />
         )}
 

@@ -3,6 +3,7 @@
 import { SEARCH_STRATEGY_REGISTRY } from "rag-evaluation-system/registry";
 import { StrategyCard } from "../shared/StrategyCard";
 import { OptionGroup } from "../shared/OptionGroup";
+import { IndexSearchNote } from "@/components/tabs/QuerySearchTab";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -14,6 +15,8 @@ interface SearchStepProps {
   k: number;
   onSearchChange: (strategy: string, options: Record<string, unknown>) => void;
   onKChange: (k: number) => void;
+  indexStrategy?: string;
+  indexConfig?: Record<string, unknown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -26,6 +29,8 @@ export function SearchStep({
   k,
   onSearchChange,
   onKChange,
+  indexStrategy,
+  indexConfig,
 }: SearchStepProps) {
   const selectedEntry = SEARCH_STRATEGY_REGISTRY.find(
     (e) => e.id === searchStrategy,
@@ -62,6 +67,11 @@ export function SearchStep({
           ))}
         </div>
       </section>
+
+      {/* Index→search interaction note */}
+      {indexStrategy && indexStrategy !== "plain" && (
+        <IndexSearchNote indexStrategy={indexStrategy} indexConfig={indexConfig ?? {}} />
+      )}
 
       {/* Strategy options */}
       {selectedEntry && selectedEntry.options.length > 0 && (
