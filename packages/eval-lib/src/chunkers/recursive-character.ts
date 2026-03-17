@@ -134,9 +134,9 @@ export class RecursiveCharacterChunker implements Chunker, PositionAwareChunker 
             currentLen -= dropLen;
             currentParts.shift();
           }
-          // Safety: if the remaining content still exceeds chunkOverlap
-          // (single large paragraph), clear it to prevent re-splitting
-          if (currentLen > this._chunkOverlap) {
+          // Safety: if a single part alone exceeds chunkOverlap (large paragraph),
+          // clear it to prevent duplicate emission on the next cycle.
+          if (currentParts.length === 1 && currentLen > this._chunkOverlap) {
             currentParts = [];
             currentLen = 0;
           }
