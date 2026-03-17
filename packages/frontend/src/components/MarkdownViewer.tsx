@@ -6,13 +6,13 @@ import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 
-/** Allow all standard HTML + GFM elements but strip unknown tags like <last>, <party> */
+/** Strip non-standard tags (e.g. <last>, <party>) while preserving standard HTML.
+ *  Extends defaultSchema with elements not in the GitHub-style allowlist. */
 const sanitizeSchema = {
   ...defaultSchema,
-  // Keep rehype-raw's permissiveness for standard elements
   tagNames: [
     ...(defaultSchema.tagNames ?? []),
-    "details", "summary", "mark", "abbr", "sub", "sup",
+    "mark", "abbr", "sub", "sup",
   ],
 };
 
