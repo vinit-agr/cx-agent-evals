@@ -6,7 +6,7 @@ import type { Id } from "@convex/_generated/dataModel";
 import { MarkdownViewer } from "@/components/MarkdownViewer";
 import { resolveConfig } from "@/lib/pipeline-types";
 import type { PipelineConfig } from "@/lib/pipeline-types";
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -35,105 +35,6 @@ interface Chunk {
   metadata: Record<string, unknown>;
 }
 
-/** A contiguous segment of document text with styling metadata. */
-interface Segment {
-  text: string;
-  chunkIndex: number | null; // null = uncovered gap
-  isOverlap: boolean;
-}
-
-// ---------------------------------------------------------------------------
-// Segment builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build an array of styled segments from sorted chunks.
- *
- * The algorithm walks through the chunks in start-offset order, emitting
- * segments for gaps (uncovered text), normal chunk regions, and overlap
- * regions where two adjacent chunks share characters.
- */
-function buildSegments(content: string, chunks: Chunk[]): Segment[] {
-  if (chunks.length === 0) {
-    return [{ text: content, chunkIndex: null, isOverlap: false }];
-  }
-
-  const segments: Segment[] = [];
-  let cursor = 0;
-
-  for (let i = 0; i < chunks.length; i++) {
-    const chunk = chunks[i];
-    const start = Math.max(0, chunk.start);
-    const end = Math.min(content.length, chunk.end);
-
-    // Gap before this chunk
-    if (start > cursor) {
-      segments.push({
-        text: content.slice(cursor, start),
-        chunkIndex: null,
-        isOverlap: false,
-      });
-    }
-
-    // Check overlap with the next chunk
-    const nextChunk = i + 1 < chunks.length ? chunks[i + 1] : null;
-    const overlapStart = nextChunk ? Math.max(0, nextChunk.start) : end;
-    const overlapEnd = nextChunk
-      ? Math.min(end, Math.min(content.length, nextChunk.end))
-      : end;
-    const hasOverlap = nextChunk !== null && overlapStart < end;
-
-    if (hasOverlap) {
-      // Non-overlapping part of this chunk
-      if (overlapStart > Math.max(start, cursor)) {
-        segments.push({
-          text: content.slice(Math.max(start, cursor), overlapStart),
-          chunkIndex: i,
-          isOverlap: false,
-        });
-      }
-      // Overlapping part
-      if (overlapEnd > overlapStart) {
-        segments.push({
-          text: content.slice(overlapStart, overlapEnd),
-          chunkIndex: i,
-          isOverlap: true,
-        });
-      }
-      // Remainder of this chunk after overlap
-      if (end > overlapEnd) {
-        segments.push({
-          text: content.slice(overlapEnd, end),
-          chunkIndex: i,
-          isOverlap: false,
-        });
-      }
-    } else {
-      // No overlap - emit the whole chunk
-      const segStart = Math.max(start, cursor);
-      if (end > segStart) {
-        segments.push({
-          text: content.slice(segStart, end),
-          chunkIndex: i,
-          isOverlap: false,
-        });
-      }
-    }
-
-    cursor = Math.max(cursor, end);
-  }
-
-  // Trailing text after all chunks
-  if (cursor < content.length) {
-    segments.push({
-      text: content.slice(cursor),
-      chunkIndex: null,
-      isOverlap: false,
-    });
-  }
-
-  return segments;
-}
 
 // ---------------------------------------------------------------------------
 // Diff detection
@@ -175,38 +76,224 @@ function Spinner({ className }: { className?: string }) {
   );
 }
 
-/** Numbered pill inserted at a chunk boundary. */
-function ChunkPill({
-  index,
-  isSelected,
-  onClick,
+// ---------------------------------------------------------------------------
+// Click-to-highlight helpers
+// ---------------------------------------------------------------------------
+
+/** Find chunk(s) that contain the given character position. */
+function findChunksAtPosition(
+  chunks: Chunk[],
+  position: number,
+): { primary: number | null; overlap: number | null } {
+  let primary: number | null = null;
+  let overlap: number | null = null;
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (position >= chunks[i].start && position < chunks[i].end) {
+      if (primary === null) {
+        primary = i;
+      } else {
+        overlap = i;
+        break;
+      }
+    }
+  }
+
+  return { primary, overlap };
+}
+
+/**
+ * Render document content split into per-line spans with data-offset
+ * for character-position detection on click.
+ * When a chunk is selected, its character range is highlighted.
+ */
+function ClickableDocumentContent({
+  content,
+  chunks,
+  selectedChunkIndex,
+  overlapChunkIndex,
+  onSelectChunk,
 }: {
-  index: number;
-  isSelected: boolean;
-  onClick: () => void;
+  content: string;
+  chunks: Chunk[];
+  selectedChunkIndex: number | null;
+  overlapChunkIndex: number | null;
+  onSelectChunk: (index: number | null) => void;
 }) {
-  return (
-    <span
-      role="button"
-      tabIndex={0}
-      onClick={(e) => {
-        e.stopPropagation();
-        onClick();
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick();
+  const contentRef = useRef<HTMLPreElement>(null);
+
+  // Split content into lines, each in a span with data-offset
+  const lines = useMemo(() => {
+    const result: Array<{ text: string; offset: number }> = [];
+    let pos = 0;
+    const parts = content.split("\n");
+    for (let i = 0; i < parts.length; i++) {
+      result.push({ text: parts[i], offset: pos });
+      pos += parts[i].length + 1; // +1 for \n
+    }
+    return result;
+  }, [content]);
+
+  // Click handler: map click to character position, find chunk
+  const handleClick = useCallback(
+    (e: React.MouseEvent) => {
+      // Walk up from target to find span with data-offset
+      let el = e.target as HTMLElement | null;
+      while (el && !el.dataset.offset) {
+        el = el.parentElement;
+      }
+      if (!el?.dataset.offset) return;
+
+      const lineOffset = parseInt(el.dataset.offset, 10);
+
+      // Use Selection API to get offset within the text node
+      const selection = window.getSelection();
+      let charOffset = 0;
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        charOffset = range.startOffset;
+      }
+
+      const position = lineOffset + charOffset;
+      const hit = findChunksAtPosition(chunks, position);
+
+      if (hit.primary !== null) {
+        onSelectChunk(hit.primary);
+      } else {
+        onSelectChunk(null);
+      }
+    },
+    [chunks, onSelectChunk],
+  );
+
+  // Escape to clear
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onSelectChunk(null);
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, [onSelectChunk]);
+
+  // Scroll to selected chunk
+  useEffect(() => {
+    if (selectedChunkIndex === null || !contentRef.current) return;
+    const chunk = chunks[selectedChunkIndex];
+    if (!chunk) return;
+    const spans = contentRef.current.querySelectorAll("[data-offset]");
+    for (const span of spans) {
+      const offset = parseInt((span as HTMLElement).dataset.offset ?? "0", 10);
+      if (offset >= chunk.start) {
+        span.scrollIntoView({ behavior: "smooth", block: "center" });
+        break;
+      }
+    }
+  }, [selectedChunkIndex, chunks]);
+
+  // Build highlight ranges
+  const selectedChunk = selectedChunkIndex !== null ? chunks[selectedChunkIndex] : null;
+  const overlapChunk = overlapChunkIndex !== null ? chunks[overlapChunkIndex] : null;
+
+  // Render a line, applying highlights if the line intersects a selected chunk
+  const renderLine = useCallback(
+    (line: { text: string; offset: number }, idx: number) => {
+      const lineEnd = line.offset + line.text.length;
+
+      // Check if this line intersects any highlighted chunk
+      const intersectsSelected =
+        selectedChunk && line.offset < selectedChunk.end && lineEnd > selectedChunk.start;
+      const intersectsOverlap =
+        overlapChunk && line.offset < overlapChunk.end && lineEnd > overlapChunk.start;
+
+      if (!intersectsSelected && !intersectsOverlap) {
+        return (
+          <span key={idx} data-offset={line.offset}>
+            {line.text}
+            {"\n"}
+          </span>
+        );
+      }
+
+      // Build sub-segments within this line for highlighting
+      const segments: React.ReactNode[] = [];
+      let cursor = 0;
+      const text = line.text;
+
+      // Collect highlight ranges within this line
+      type Range = { start: number; end: number; cls: string };
+      const ranges: Range[] = [];
+      if (selectedChunk) {
+        const s = Math.max(0, selectedChunk.start - line.offset);
+        const e = Math.min(text.length, selectedChunk.end - line.offset);
+        if (s < e) ranges.push({ start: s, end: e, cls: "bg-accent/10" });
+      }
+      if (overlapChunk) {
+        const s = Math.max(0, overlapChunk.start - line.offset);
+        const e = Math.min(text.length, overlapChunk.end - line.offset);
+        if (s < e) ranges.push({ start: s, end: e, cls: "bg-blue-400/10" });
+      }
+
+      // Sort ranges by start
+      ranges.sort((a, b) => a.start - b.start);
+
+      for (const range of ranges) {
+        if (range.start > cursor) {
+          segments.push(text.slice(cursor, range.start));
         }
-      }}
-      className={`inline-block px-1 rounded font-mono text-[9px] cursor-pointer transition-colors ${
-        isSelected
-          ? "bg-accent/40 text-accent-bright ring-1 ring-accent/50"
-          : "bg-accent/20 text-accent hover:bg-accent/30"
-      }`}
-    >
-      [{index + 1}]
-    </span>
+        segments.push(
+          <span key={`hl-${range.start}`} className={range.cls}>
+            {text.slice(range.start, range.end)}
+          </span>,
+        );
+        cursor = range.end;
+      }
+      if (cursor < text.length) {
+        segments.push(text.slice(cursor));
+      }
+
+      return (
+        <span key={idx} data-offset={line.offset}>
+          {segments}
+          {"\n"}
+        </span>
+      );
+    },
+    [selectedChunk, overlapChunk],
+  );
+
+  return (
+    <div className="relative">
+      {/* Chunk boundary hairlines (left margin) */}
+      {chunks.length > 0 && (
+        <div className="absolute left-0 top-0 w-1 h-full pointer-events-none">
+          {chunks.map((chunk, i) => {
+            // Approximate position (line-based; exact calc needs layout measurement)
+            const chunkLine = lines.findIndex(
+              (l) => l.offset + l.text.length >= chunk.start,
+            );
+            if (chunkLine < 0) return null;
+            const totalLines = lines.length;
+            const pct = (chunkLine / Math.max(totalLines, 1)) * 100;
+            return (
+              <div
+                key={i}
+                className="absolute w-full bg-accent/20"
+                style={{ top: `${pct}%`, height: "1px" }}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {/* Document text */}
+      <pre
+        ref={contentRef}
+        className="text-xs text-text-muted leading-[1.8] whitespace-pre-wrap break-words font-mono max-w-full pl-3 cursor-text"
+        onClick={handleClick}
+      >
+        {lines.map(renderLine)}
+      </pre>
+    </div>
   );
 }
 
@@ -281,7 +368,7 @@ function DocumentViewerPanel({
   indexConfigHash: string;
   documentId: Id<"documents">;
   selectedChunkIndex: number | null;
-  onSelectChunk: (index: number) => void;
+  onSelectChunk: (index: number | null) => void;
   /** Whether the retriever has been indexed (chunks exist). */
   isReady: boolean;
 }) {
@@ -359,12 +446,6 @@ function DocumentViewerPanel({
     [allChunks],
   );
 
-  // Build segments for rendering
-  const segments = useMemo(() => {
-    if (!docContent) return [];
-    return buildSegments(docContent.content, sortedChunks);
-  }, [docContent, sortedChunks]);
-
   if (docContent === undefined || (isReady && firstPage === undefined)) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -433,16 +514,13 @@ function DocumentViewerPanel({
       <div className="flex-1 overflow-y-auto p-4">
         {viewMode === "raw" ? (
           <>
-            <pre className="text-xs text-text-muted leading-[1.8] whitespace-pre-wrap break-words font-mono max-w-full">
-              {hasChunks
-                ? renderAnnotatedContent(
-                    segments,
-                    sortedChunks,
-                    selectedChunkIndex,
-                    onSelectChunk,
-                  )
-                : docContent.content}
-            </pre>
+            <ClickableDocumentContent
+              content={docContent.content}
+              chunks={sortedChunks}
+              selectedChunkIndex={selectedChunkIndex}
+              overlapChunkIndex={null}
+              onSelectChunk={onSelectChunk}
+            />
 
             {/* Load More */}
             {hasMore && (
@@ -473,7 +551,7 @@ function DocumentViewerPanel({
             />
             {hasChunks && (
               <p className="mt-2 text-[10px] text-text-dim italic">
-                Switch to raw mode to see chunk boundary annotations.
+                Switch to raw mode to highlight and inspect chunks.
               </p>
             )}
           </>
@@ -483,60 +561,6 @@ function DocumentViewerPanel({
   );
 }
 
-/**
- * Render the document content with chunk annotation styling.
- * Inserts numbered pills at chunk boundaries and applies zebra striping.
- */
-function renderAnnotatedContent(
-  segments: Segment[],
-  sortedChunks: Chunk[],
-  selectedChunkIndex: number | null,
-  onSelectChunk: (index: number) => void,
-): React.ReactNode[] {
-  if (segments.length === 0) return [];
-
-  const elements: React.ReactNode[] = [];
-  // Track which chunk indices have already had their pill inserted
-  const pillsInserted = new Set<number>();
-
-  for (let i = 0; i < segments.length; i++) {
-    const seg = segments[i];
-
-    // Insert a pill at the start of a new chunk
-    if (seg.chunkIndex !== null && !pillsInserted.has(seg.chunkIndex)) {
-      pillsInserted.add(seg.chunkIndex);
-      elements.push(
-        <ChunkPill
-          key={`pill-${seg.chunkIndex}`}
-          index={seg.chunkIndex}
-          isSelected={selectedChunkIndex === seg.chunkIndex}
-          onClick={() => onSelectChunk(seg.chunkIndex!)}
-        />,
-      );
-    }
-
-    // Style the segment
-    let bgClass = "";
-    if (seg.isOverlap) {
-      bgClass = "bg-yellow-500/10";
-    } else if (seg.chunkIndex !== null) {
-      bgClass = seg.chunkIndex % 2 === 0 ? "bg-accent/5" : "bg-accent/[0.02]";
-    }
-
-    const isInSelectedChunk = seg.chunkIndex === selectedChunkIndex;
-
-    elements.push(
-      <span
-        key={`seg-${i}`}
-        className={`${bgClass} ${isInSelectedChunk ? "ring-1 ring-accent/30 rounded-sm" : ""}`}
-      >
-        {seg.text}
-      </span>,
-    );
-  }
-
-  return elements;
-}
 
 // ---------------------------------------------------------------------------
 // Chunk Inspector Panel (right)
@@ -611,7 +635,7 @@ function ChunkInspectorPanel({
           )}
         </div>
         <div className="flex-1 flex items-center justify-center text-xs text-text-dim px-4 text-center">
-          Click a numbered pill in the document to inspect a chunk.
+          Click anywhere in the document to inspect the chunk at that position.
         </div>
       </div>
     );
@@ -1006,7 +1030,7 @@ export function IndexTab({ retriever, onStartIndexing }: IndexTabProps) {
             />
           ) : (
             <div className="flex items-center justify-center h-full text-xs text-text-dim px-4 text-center">
-              Select a document and click a chunk pill to inspect.
+              Select a document and click in the text to inspect a chunk.
             </div>
           )}
         </div>
