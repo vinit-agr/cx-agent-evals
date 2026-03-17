@@ -92,7 +92,9 @@ export const indexDocument = internalAction({
         const parentChunks = parentChunker.chunkWithPositions(evalDoc);
         const childChunks = childChunker.chunkWithPositions(evalDoc);
 
-        if (parentChunks.length === 0 && childChunks.length === 0) {
+        if (parentChunks.length === 0 || childChunks.length === 0) {
+          // Both must be non-empty for parent-child to work; if document is
+          // too short for either level, skip rather than create orphans
           return { skipped: false, chunksInserted: 0, chunksEmbedded: 0 };
         }
 
