@@ -272,23 +272,6 @@ export default defineSchema({
     .index("by_org", ["orgId"])
     .index("by_status", ["orgId", "status"]),
 
-  // ─── Agent Thread Configs (KB + retriever config per chat thread) ───
-  agentThreadConfigs: defineTable({
-    threadId: v.string(),
-    orgId: v.string(),
-    userId: v.string(),
-    title: v.optional(v.string()),
-    kbConfigs: v.array(
-      v.object({
-        kbId: v.id("knowledgeBases"),
-        retrieverConfig: v.optional(v.any()),
-      }),
-    ),
-    createdAt: v.number(),
-  })
-    .index("by_thread", ["threadId"])
-    .index("by_user_org", ["userId", "orgId"]),
-
   // ─── Crawl Jobs (web scraping job tracking) ───
   crawlJobs: defineTable({
     orgId: v.string(),

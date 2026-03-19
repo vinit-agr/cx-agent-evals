@@ -10,16 +10,17 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.94",
-    "@convex-dev/agent": "^0.3.2",
     "@convex-dev/workpool": "^0.4.0",
-    "@langchain/core": ">=0.1.0",
-    "ai": "^5.0.139",
+    "@langchain/core": "^1.1.0",
+    "@mozilla/readability": "^0.6.0",
     "convex": "^1.32.0",
-    "langsmith": ">=0.1.0",
+    "langsmith": "^0.5.0",
+    "linkedom": "^0.18.12",
+    "minisearch": "^7.2.0",
     "openai": "^4.70.0",
     "rag-evaluation-system": "workspace:*",
-    "zod": "^3.25.76"
+    "turndown": "^7.2.2",
+    "unpdf": "^1.4.0"
   },
   "devDependencies": {
     "@edge-runtime/vm": "^5.0.0",
