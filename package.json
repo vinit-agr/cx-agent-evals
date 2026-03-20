@@ -12,6 +12,7 @@
     "typecheck:backend": "pnpm -C packages/backend typecheck"
   },
   "dependencies": {
-    "@clerk/themes": "^2.4.52"
+    "@clerk/themes": "^2.4.52",
+    "next": "16.1.6"
   }
 }
