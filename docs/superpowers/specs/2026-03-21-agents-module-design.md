@@ -250,7 +250,15 @@ Org-scoped operations following existing patterns:
 
 **Step 3 — Optional reflection** (if `enableReflection` is true):
 - After generating answer, one more LLM call evaluating factual grounding, policy compliance, helpfulness
-- If inadequate, revise and update the assistant message
+- If inadequate, revise and update the assistant message content in-place (same message row, no new message)
+
+#### Error Handling
+
+If the `runAgent` action fails at any point (LLM timeout, rate limit, retriever failure, unexpected error):
+1. Catch the error in a top-level try/catch around the agent loop
+2. Update the pending assistant message: set status to `"error"`, write a user-visible error message in `content` (e.g., "Something went wrong. Please try again.")
+3. Any stream deltas already written remain (the frontend will show partial text + error state)
+4. The conversation remains usable — the user can send another message to retry
 
 #### Streaming Pattern
 
@@ -272,7 +280,7 @@ Separate action triggered on agent creation/update when `companyUrl` changes:
 
 ### Template Structure
 
-A pure function `composeSystemPrompt(agent, retrievers)` builds the system prompt from structured sections. It lives in a shared utility (no `"use node"` deps).
+A pure function `composeSystemPrompt(agent, retrievers)` builds the system prompt from structured sections. It lives in `packages/backend/convex/agents/promptTemplate.ts` (no `"use node"` deps — pure string interpolation, importable from both actions and tests).
 
 Sections (omitted if empty):
 1. **Identity** — agent name, company name, role description, company context, brand voice
@@ -310,7 +318,7 @@ Sections (omitted if empty):
 2. **Response Style** — formality/length/formatting dropdowns, language text input
 3. **Guardrails & Policies** (collapsible) — out of scope, escalation rules, compliance textareas
 4. **Agent Behavior** — model dropdown, reflection toggle
-5. **Retriever Tools** — checklist of linked retrievers (showing source KB name + config), "+ Add retriever from any KB"
+5. **Retriever Tools** — checklist of currently linked retrievers (showing source KB name + config). "+ Add retriever" button opens a dropdown/popover listing all org retrievers (grouped by KB) with status badges. Only "ready" retrievers are selectable. Selecting adds to the agent's `retrieverIds`.
 6. **Additional Instructions** (collapsible) — free-form textarea
 7. **Save button** at bottom
 
@@ -360,6 +368,7 @@ When user clicks expand on a tool call chip:
 **Backend:**
 - `packages/backend/convex/agents/actions.ts` — agent execution, URL extraction
 - `packages/backend/convex/agents/orchestration.ts` — sendMessage, playground management
+- `packages/backend/convex/agents/promptTemplate.ts` — composeSystemPrompt pure function
 - `packages/backend/convex/crud/agents.ts` — agent CRUD
 - `packages/backend/convex/crud/conversations.ts` — conversation + message queries
 
