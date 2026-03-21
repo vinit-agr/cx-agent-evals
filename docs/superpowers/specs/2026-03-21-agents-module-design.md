@@ -48,7 +48,11 @@ Build entirely with Convex primitives, using the Vercel AI SDK only for LLM call
 - `ai` (Vercel AI SDK core)
 - `@ai-sdk/anthropic` (Anthropic provider)
 
-Both added to `packages/backend/package.json` and marked as external in `convex.json`.
+Both added to `packages/backend/package.json` and marked as external in `packages/backend/convex.json`.
+
+### Environment Variables
+
+- `ANTHROPIC_API_KEY` — Required for agent execution. Must be set in the Convex dashboard environment variables (alongside existing `OPENAI_API_KEY` and `LANGSMITH_API_KEY`).
 
 ## Data Model
 
@@ -118,6 +122,13 @@ conversations: defineTable({
 
 ### `messages` table
 
+These are the application's storage roles, not AI SDK roles. The `runAgent` action maps between these and the AI SDK message format:
+- `"user"` → AI SDK `{ role: "user", content }`
+- `"assistant"` → AI SDK `{ role: "assistant", content }` (may include `toolInvocations`)
+- `"tool_call"` → stored for UI display; included in AI SDK messages as part of assistant `toolInvocations`
+- `"tool_result"` → AI SDK `{ role: "tool", content, toolCallId }`
+- When reconstructing conversation history for subsequent LLM calls, `tool_call` messages are folded into the preceding `assistant` message's `toolInvocations`, and `tool_result` messages become `role: "tool"` messages.
+
 ```typescript
 messages: defineTable({
   conversationId: v.id("conversations"),
@@ -136,11 +147,13 @@ messages: defineTable({
   agentId: v.optional(v.id("agents")),
 
   toolCall: v.optional(v.object({
+    toolCallId: v.string(),              // AI SDK tool call ID for mapping results
     toolName: v.string(),
     toolArgs: v.string(),
     retrieverId: v.optional(v.id("retrievers")),
   })),
   toolResult: v.optional(v.object({
+    toolCallId: v.string(),              // matches the tool_call's toolCallId
     toolName: v.string(),
     result: v.string(),
     retrieverId: v.optional(v.id("retrievers")),
@@ -242,10 +255,10 @@ Org-scoped operations following existing patterns:
 #### Streaming Pattern
 
 1. Action calls `streamText()` from AI SDK
-2. Consumes text stream in chunks
-3. Each chunk → mutation inserting into `streamDeltas` with incrementing cursors
-4. Frontend subscribes to `streamDeltas` by message ID, reconstructs text
-5. On completion, full text written to `messages.content`, deltas cleaned up
+2. Consumes text stream, buffering chunks for ~200ms or 50 characters (whichever comes first) before flushing
+3. Each flush → mutation inserting into `streamDeltas` with incrementing `start`/`end` cursors
+4. Frontend subscribes to `streamDeltas` by message ID, reconstructs text from ordered deltas
+5. On completion: final mutation writes full text to `messages.content`, marks status `"complete"`, and schedules a cleanup action (via `ctx.scheduler.runAfter`) to delete all `streamDeltas` rows for this message in batches
 
 #### URL Context Extraction
 
@@ -360,7 +373,7 @@ When user clicks expand on a tool call chip:
 ### Modified files
 
 - `packages/backend/convex/schema.ts` — add agents, conversations, messages, streamDeltas tables
-- `packages/backend/convex/convex.json` — add `ai`, `@ai-sdk/anthropic` to external packages
+- `packages/backend/convex.json` — add `ai`, `@ai-sdk/anthropic` to external packages
 - `packages/backend/package.json` — add `ai`, `@ai-sdk/anthropic` dependencies
 - `packages/frontend/src/components/Header.tsx` — add "Agents" mode to navigation
 - `packages/frontend/src/components/ModeSelector.tsx` — add Agents card
