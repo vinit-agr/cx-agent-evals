@@ -93,12 +93,21 @@ export const runAgent = internalAction({
     assistantMessageId: v.id("messages"),
   },
   handler: async (ctx, { conversationId, agentId, assistantMessageId }) => {
+    console.log("[runAgent] START", { conversationId, agentId, assistantMessageId });
+
     try {
       // 1. Load agent config
+      console.log("[runAgent] Step 1: Loading agent config...");
       const agent = await ctx.runQuery(internal.crud.agents.getInternal, { id: agentId });
       if (!agent) throw new Error("Agent not found");
+      console.log("[runAgent] Step 1 OK: agent loaded", {
+        name: agent.name,
+        model: agent.model,
+        retrieverCount: agent.retrieverIds.length,
+      });
 
       // 2. Load linked retrievers with KB info
+      console.log("[runAgent] Step 2: Loading retrievers...");
       const retrieverInfos: Array<{
         id: string;
         name: string;
@@ -115,7 +124,10 @@ export const runAgent = internalAction({
         const retriever = await ctx.runQuery(internal.crud.retrievers.getInternal, {
           id: retrieverId,
         });
-        if (!retriever || retriever.status !== "ready") continue;
+        if (!retriever || retriever.status !== "ready") {
+          console.log("[runAgent] Skipping retriever (not ready):", retrieverId, retriever?.status);
+          continue;
+        }
         const kb = await ctx.runQuery(internal.crud.knowledgeBases.getInternal, {
           id: retriever.kbId,
         });
@@ -131,8 +143,14 @@ export const runAgent = internalAction({
           defaultK: retriever.defaultK ?? 5,
         });
       }
+      console.log("[runAgent] Step 2 OK: retrievers loaded", {
+        total: agent.retrieverIds.length,
+        ready: retrieverInfos.length,
+        names: retrieverInfos.map((r) => r.name),
+      });
 
       // 3. Build system prompt
+      console.log("[runAgent] Step 3: Building system prompt...");
       const systemPrompt = composeSystemPrompt(
         agent,
         retrieverInfos.map((r) => ({
@@ -140,8 +158,10 @@ export const runAgent = internalAction({
           kbName: r.kbName,
         })),
       );
+      console.log("[runAgent] Step 3 OK: prompt length =", systemPrompt.length);
 
       // 4. Build AI SDK tools — one per retriever
+      console.log("[runAgent] Step 4: Building tools...");
       const tools: Record<string, any> = {};
       const retrieverMap = new Map(retrieverInfos.map((r) => [slugify(r.name), r]));
 
@@ -154,6 +174,7 @@ export const runAgent = internalAction({
             k: z.number().optional().describe("Number of results to return"),
           }),
           execute: async ({ query, k }) => {
+            console.log("[runAgent] Tool execute:", toolName, { query, k });
             const topK = k ?? info.defaultK;
 
             // Embed the query
@@ -170,6 +191,7 @@ export const runAgent = internalAction({
               indexStrategy: info.indexStrategy,
             });
 
+            console.log("[runAgent] Tool result:", toolName, "chunks:", chunks.length);
             return chunks.map((c: any) => ({
               content: c.content,
               documentId: c.documentId,
@@ -179,8 +201,10 @@ export const runAgent = internalAction({
           },
         });
       }
+      console.log("[runAgent] Step 4 OK: tools =", Object.keys(tools));
 
       // 5. Load conversation history
+      console.log("[runAgent] Step 5: Loading conversation history...");
       const allMessages = await ctx.runQuery(
         internal.crud.conversations.listMessagesInternal,
         { conversationId },
@@ -189,6 +213,11 @@ export const runAgent = internalAction({
         (m: any) => m._id !== assistantMessageId,
       );
       const aiMessages = toAIMessages(historyMessages);
+      console.log("[runAgent] Step 5 OK:", {
+        totalMessages: allMessages.length,
+        historyMessages: historyMessages.length,
+        aiMessages: aiMessages.length,
+      });
 
       // 6. Track order for new messages
       const lastOrder = allMessages.length > 0
@@ -197,6 +226,16 @@ export const runAgent = internalAction({
       let nextOrder = lastOrder + 1;
 
       // 7. Stream the response
+      console.log("[runAgent] Step 7: Starting streamText with model:", agent.model);
+
+      // Check env vars
+      const isOpenAI = agent.model.startsWith("gpt-") || agent.model.startsWith("o1") || agent.model.startsWith("o3") || agent.model.startsWith("o4");
+      if (isOpenAI) {
+        console.log("[runAgent] Using OpenAI provider. OPENAI_API_KEY set:", !!process.env.OPENAI_API_KEY);
+      } else {
+        console.log("[runAgent] Using Anthropic provider. ANTHROPIC_API_KEY set:", !!process.env.ANTHROPIC_API_KEY);
+      }
+
       let streamCursor = 0;
       let buffer = "";
       const FLUSH_INTERVAL_MS = 200;
@@ -219,13 +258,21 @@ export const runAgent = internalAction({
         });
       };
 
+      const resolvedModel = resolveModel(agent.model);
+      console.log("[runAgent] Model resolved. Calling streamText...");
+
       const result = streamText({
-        model: resolveModel(agent.model),
+        model: resolvedModel,
         system: systemPrompt,
         messages: aiMessages,
-        tools,
+        tools: Object.keys(tools).length > 0 ? tools : undefined,
         maxSteps: 5,
         onStepFinish: async (step) => {
+          console.log("[runAgent] onStepFinish:", {
+            toolCalls: step.toolCalls?.length ?? 0,
+            toolResults: step.toolResults?.length ?? 0,
+            text: step.text?.slice(0, 100),
+          });
           if (step.toolCalls && step.toolCalls.length > 0) {
             for (const tc of step.toolCalls) {
               const retrieverInfo = retrieverMap.get(tc.toolName);
@@ -267,7 +314,10 @@ export const runAgent = internalAction({
         },
       });
 
+      console.log("[runAgent] streamText called, consuming textStream...");
+      let chunkCount = 0;
       for await (const chunk of result.textStream) {
+        chunkCount++;
         buffer += chunk;
         const now = Date.now();
         if (
@@ -278,9 +328,14 @@ export const runAgent = internalAction({
         }
       }
       await flushBuffer();
+      console.log("[runAgent] Stream complete. Chunks received:", chunkCount);
 
       // 8. Finalize the assistant message
       const [finalText, usage] = await Promise.all([result.text, result.usage]);
+      console.log("[runAgent] Step 8: Finalizing message", {
+        textLength: finalText.length,
+        usage,
+      });
       await ctx.runMutation(internal.crud.conversations.updateMessage, {
         messageId: assistantMessageId,
         content: finalText,
@@ -299,12 +354,27 @@ export const runAgent = internalAction({
         internal.crud.conversations.cleanupStreamDeltas,
         { messageId: assistantMessageId },
       );
+      console.log("[runAgent] DONE - success");
     } catch (error: any) {
-      await ctx.runMutation(internal.crud.conversations.updateMessage, {
-        messageId: assistantMessageId,
-        content: `Something went wrong: ${error.message ?? "Unknown error"}. Please try again.`,
-        status: "error",
+      console.error("[runAgent] CAUGHT ERROR:", {
+        name: error?.name,
+        message: error?.message,
+        cause: error?.cause,
+        stack: error?.stack?.slice(0, 500),
       });
+      // Try to update the message with the error
+      try {
+        await ctx.runMutation(internal.crud.conversations.updateMessage, {
+          messageId: assistantMessageId,
+          content: `Error: ${error.message ?? "Unknown error"}. Please try again.`,
+          status: "error",
+        });
+        console.log("[runAgent] Error message saved to conversation");
+      } catch (updateError: any) {
+        console.error("[runAgent] FAILED to save error to message:", updateError?.message);
+      }
+      // Re-throw so Convex marks the action as failed (not silently swallowed)
+      throw error;
     }
   },
 });
