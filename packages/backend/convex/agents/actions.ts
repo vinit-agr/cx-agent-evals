@@ -267,71 +267,91 @@ export const runAgent = internalAction({
         messages: aiMessages,
         tools: Object.keys(tools).length > 0 ? tools : undefined,
         maxSteps: 5,
-        onStepFinish: async (step) => {
-          console.log("[runAgent] onStepFinish:", {
-            toolCalls: step.toolCalls?.length ?? 0,
-            toolResults: step.toolResults?.length ?? 0,
-            text: step.text?.slice(0, 100),
-          });
-          if (step.toolCalls && step.toolCalls.length > 0) {
-            for (const tc of step.toolCalls) {
-              const retrieverInfo = retrieverMap.get(tc.toolName);
-              await ctx.runMutation(internal.crud.conversations.insertMessage, {
-                conversationId,
-                order: nextOrder++,
-                role: "tool_call",
-                content: "",
-                agentId,
-                toolCall: {
-                  toolCallId: tc.toolCallId,
-                  toolName: tc.toolName,
-                  toolArgs: JSON.stringify(tc.args),
-                  retrieverId: retrieverInfo?.id as any,
-                },
-                status: "complete",
-              });
-            }
-          }
-          if (step.toolResults && step.toolResults.length > 0) {
-            for (const tr of step.toolResults) {
-              const retrieverInfo = retrieverMap.get(tr.toolName);
-              await ctx.runMutation(internal.crud.conversations.insertMessage, {
-                conversationId,
-                order: nextOrder++,
-                role: "tool_result",
-                content: "",
-                agentId,
-                toolResult: {
-                  toolCallId: tr.toolCallId,
-                  toolName: tr.toolName,
-                  result: JSON.stringify(tr.result),
-                  retrieverId: retrieverInfo?.id as any,
-                },
-                status: "complete",
-              });
-            }
-          }
-        },
       });
 
-      console.log("[runAgent] streamText called, consuming textStream...");
+      // Use fullStream to properly handle multi-step tool use.
+      // textStream only yields text deltas and can complete before tool calls finish.
+      // fullStream yields ALL events and only ends when all steps are done.
+      console.log("[runAgent] Consuming fullStream (handles tool calls + text)...");
+      let fullText = "";
       let chunkCount = 0;
-      for await (const chunk of result.textStream) {
-        chunkCount++;
-        buffer += chunk;
-        const now = Date.now();
-        if (
-          buffer.length >= FLUSH_CHAR_THRESHOLD ||
-          now - lastFlushTime >= FLUSH_INTERVAL_MS
-        ) {
-          await flushBuffer();
+      let stepCount = 0;
+
+      for await (const part of result.fullStream) {
+        if (part.type === "text-delta") {
+          chunkCount++;
+          buffer += part.textDelta;
+          const now = Date.now();
+          if (
+            buffer.length >= FLUSH_CHAR_THRESHOLD ||
+            now - lastFlushTime >= FLUSH_INTERVAL_MS
+          ) {
+            await flushBuffer();
+          }
+        } else if (part.type === "tool-call") {
+          console.log("[runAgent] Tool call:", part.toolName, JSON.stringify(part.args).slice(0, 200));
+          const retrieverInfo = retrieverMap.get(part.toolName);
+          await ctx.runMutation(internal.crud.conversations.insertMessage, {
+            conversationId,
+            order: nextOrder++,
+            role: "tool_call",
+            content: "",
+            agentId,
+            toolCall: {
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              toolArgs: JSON.stringify(part.args),
+              retrieverId: retrieverInfo?.id as any,
+            },
+            status: "complete",
+          });
+        } else if (part.type === "tool-result") {
+          console.log("[runAgent] Tool result:", part.toolName, "length:", JSON.stringify(part.result).length);
+          const retrieverInfo = retrieverMap.get(part.toolName);
+          await ctx.runMutation(internal.crud.conversations.insertMessage, {
+            conversationId,
+            order: nextOrder++,
+            role: "tool_result",
+            content: "",
+            agentId,
+            toolResult: {
+              toolCallId: part.toolCallId,
+              toolName: part.toolName,
+              result: JSON.stringify(part.result),
+              retrieverId: retrieverInfo?.id as any,
+            },
+            status: "complete",
+          });
+        } else if (part.type === "step-finish") {
+          stepCount++;
+          console.log("[runAgent] Step finished:", stepCount, {
+            finishReason: part.finishReason,
+            usage: part.usage,
+          });
+        } else if (part.type === "error") {
+          console.error("[runAgent] Stream error event:", part.error);
+        } else if (part.type === "finish") {
+          console.log("[runAgent] Stream finished:", {
+            finishReason: part.finishReason,
+            usage: part.usage,
+          });
         }
       }
       await flushBuffer();
-      console.log("[runAgent] Stream complete. Chunks received:", chunkCount);
+      console.log("[runAgent] fullStream complete. Text chunks:", chunkCount, "Steps:", stepCount);
 
       // 8. Finalize the assistant message
-      const [finalText, usage] = await Promise.all([result.text, result.usage]);
+      // result.text and result.usage should already be resolved since fullStream completed
+      let finalText: string;
+      let usage: any;
+      try {
+        [finalText, usage] = await Promise.all([result.text, result.usage]);
+      } catch (e: any) {
+        console.error("[runAgent] Error resolving result.text/usage:", e?.message);
+        // Fall back to our accumulated buffer
+        finalText = fullText || "";
+        usage = undefined;
+      }
       console.log("[runAgent] Step 8: Finalizing message", {
         textLength: finalText.length,
         usage,
