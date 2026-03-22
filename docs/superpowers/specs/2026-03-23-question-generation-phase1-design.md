@@ -33,9 +33,11 @@ Fix three bugs and deliver two UI improvements to the question generation module
 
 Create `packages/frontend/src/app/api/discover-dimensions/route.ts`:
 - POST handler that accepts `{ url: string }`
-- Imports and calls `discoverDimensions(url, llmClient, model)` from eval-lib
-- Uses server-side `OPENAI_API_KEY` env var to create the LLM client
+- **Import path**: `discoverDimensions` is NOT on the main eval-lib entry point. Import from `rag-evaluation-system/pipeline/internals` sub-path. Do NOT pass `outputPath` (that triggers a `node:fs/promises` import which may not be needed).
+- Constructs a `DiscoverDimensionsOptions` object: `{ url, llmClient, model }` — note the function takes an options object, not positional args
+- Uses server-side `OPENAI_API_KEY` env var to create the OpenAI LLM client. `defaultFetchPage` uses standard `fetch` (safe for Next.js API routes on Node 18+).
 - Returns `{ dimensions: Dimension[] }` JSON response
+- **Note**: This function fetches the main URL plus up to 4 same-domain linked pages, then calls LLM — expect 5-15 second response time. The DimensionWizard already shows a loading spinner during this call.
 - Handles errors (invalid URL, fetch failures, LLM errors) with appropriate HTTP status codes
 
 ### Files Changed
@@ -128,12 +130,15 @@ Replace all per-strategy question count inputs with a single unified slider comp
 
 **eval-lib**:
 - `SimpleStrategy` accepts `totalQuestions` instead of `queriesPerDoc`
-- Internally computes per-doc count: `Math.ceil(totalQuestions / corpus.documents.length)`
-- After generation, trims to exactly `totalQuestions` if over-generated
+- `SimpleStrategyOptions` type changes: `queriesPerDoc` → `totalQuestions` (this is a **breaking change** to the eval-lib public API — acceptable since this is an internal workspace package, not published externally)
+- `generate()` already iterates `context.corpus.documents` internally, so it naturally works corpus-wide
+- After generation, trims to exactly `totalQuestions` if over-generated (due to `Math.ceil` rounding per doc)
 
 **Backend**:
 - `startGeneration` mutation: Simple strategy config changes from `{ queriesPerDoc }` to `{ totalQuestions }`
-- **Simple strategy becomes a single corpus-wide action** (like dimension-driven and real-world) instead of per-doc. This is simpler, consistent with the other strategies, and avoids per-doc WorkPool overhead. The action receives the full corpus, distributes the budget internally, and inserts all questions in one batch sequence.
+- **Simple strategy becomes a single corpus-wide action** (like dimension-driven and real-world) instead of per-doc. Remove the `isPerDoc` branch (lines 96-112 in `orchestration.ts`) and add a new branch matching the dimension-driven pattern.
+- **Remove `generateForDocument` action** from `actions.ts` — replaced by new `generateSimple` corpus-wide action that loads all docs, creates full corpus, and calls `SimpleStrategy.generate()`
+- The per-doc WorkPool loop in orchestration is replaced by a single `pool.enqueueAction` call
 
 **Frontend**:
 - New shared `TotalQuestionsSlider` component used by all strategy configs
@@ -143,13 +148,15 @@ Replace all per-strategy question count inputs with a single unified slider comp
 
 ### Files Changed
 
-- `packages/eval-lib/src/synthetic-datagen/strategies/simple/generator.ts` — accept totalQuestions
-- `packages/backend/convex/generation/orchestration.ts` — simple strategy config change
-- `packages/backend/convex/generation/actions.ts` — per-doc allocation logic
-- `packages/frontend/src/components/GenerateConfig.tsx` — unified slider
+- `packages/eval-lib/src/synthetic-datagen/strategies/simple/generator.ts` — accept totalQuestions, iterate all corpus docs
+- `packages/eval-lib/src/synthetic-datagen/strategies/types.ts` — change `SimpleStrategyOptions.queriesPerDoc` → `totalQuestions`
+- `packages/eval-lib/tests/unit/synthetic-datagen/strategies/simple.test.ts` — update tests to use `totalQuestions` instead of `queriesPerDoc`
+- `packages/backend/convex/generation/orchestration.ts` — simple strategy becomes single corpus-wide action (remove per-doc loop), config uses `totalQuestions`
+- `packages/backend/convex/generation/actions.ts` — new `generateSimple` corpus-wide action, remove `generateForDocument`
+- `packages/frontend/src/components/GenerateConfig.tsx` — unified slider for all strategies, remove `questionsPerDoc` from `GenerateSettings` type (defined in this file)
 - `packages/frontend/src/components/TotalQuestionsSlider.tsx` (new) — shared slider component
-- `packages/frontend/src/app/generate/page.tsx` — state management changes
-- `packages/frontend/src/lib/types.ts` — type updates
+- `packages/frontend/src/app/generate/page.tsx` — state management changes (remove `questionsPerDoc`, unify on `totalQuestions`)
+- `packages/frontend/src/lib/types.ts` — remove `questionsPerDoc` from `GenerateSettings`
 
 ---
 
@@ -167,6 +174,7 @@ Replace all per-strategy question count inputs with a single unified slider comp
 - Header: "Delete Dataset" in red
 - Impact box: dataset name, question count, strategy
 - Warning box: "This action cannot be undone. All questions and their ground truth spans will be permanently removed."
+- **Experiment guard**: If experiments reference this dataset, show an error instead: "Cannot delete — used by N experiment(s). Delete the experiments first."
 - Typed confirmation: "Type DELETE to confirm" with monospace input
 - Delete button disabled until input matches "DELETE"
 - Cancel button
@@ -175,17 +183,18 @@ Replace all per-strategy question count inputs with a single unified slider comp
 
 New `deleteDataset` mutation in `packages/backend/convex/crud/datasets.ts`:
 - Auth check (orgId ownership)
+- **Guard**: If any `experiments` reference this dataset (query `experiments.by_dataset` index), **prevent deletion** and return an error listing the experiment names. Datasets with experiment history should not be casually deleted — the user must delete experiments first.
 - Delete all questions in the dataset (`questions.byDatasetInternal` → batch delete)
-- Cancel any running generation job for this dataset
+- Cancel any running generation job for this dataset (query `generationJobs` by `datasetId` index to find active jobs, then call cancel logic)
 - Delete the dataset record
-- Clean up any LangSmith sync references (mark as orphaned, don't delete from LangSmith)
+- LangSmith synced data is left as-is (we don't manage LangSmith cleanup from here)
 
 ### Files Changed
 
-- `packages/backend/convex/crud/datasets.ts` — `deleteDataset` mutation + `deleteQuestionsByDataset` internal mutation
+- `packages/backend/convex/crud/datasets.ts` — `deleteDataset` mutation (with experiment guard)
 - `packages/backend/convex/crud/questions.ts` — `deleteByDataset` internal mutation
-- `packages/frontend/src/app/generate/page.tsx` — trash icon on dataset items, modal state
-- Possibly extract a reusable `ConfirmDeleteModal` variant, or adapt the existing one
+- `packages/frontend/src/app/generate/page.tsx` — trash icon on dataset items, delete modal state, experiment guard error display
+- New dataset-specific delete modal component (the existing `ConfirmDeleteModal` is retriever-specific with `action: "retriever" | "index"` typing — create a simpler variant for datasets)
 
 ---
 
@@ -194,7 +203,7 @@ New `deleteDataset` mutation in `packages/backend/convex/crud/datasets.ts`:
 - **Bug #1**: Manual test — enter URL in DimensionWizard, verify dimensions are discovered
 - **Bug #8**: Manual test — start generation, switch tabs, return, verify questions display correctly. Also check Convex dashboard for data integrity.
 - **Bug #10**: Unit test — run dimension-driven strategy with known inputs, verify output count matches `totalQuestions`. Add funnel logging assertions.
-- **Slider**: Unit test — SimpleStrategy with `totalQuestions` produces correct count. Frontend: verify slider renders and persists value.
+- **Slider**: Update existing `simple.test.ts` — change `queriesPerDoc` to `totalQuestions`, verify correct count with multi-doc corpus. Add test for trimming when over-generated.
 - **Dataset delete**: Integration test — create dataset with questions, delete, verify both are gone. Frontend: verify modal flow.
 
 ---
