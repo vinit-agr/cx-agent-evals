@@ -7,7 +7,7 @@ import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
 import { useKbFromUrl } from "@/lib/useKbFromUrl";
 import { KBDropdown } from "@/components/KBDropdown";
-import { GenerateConfig, GenerateSettings } from "@/components/GenerateConfig";
+import { GenerateConfig } from "@/components/GenerateConfig";
 import { QuestionList } from "@/components/QuestionList";
 import { DocumentViewer } from "@/components/DocumentViewer";
 import { DimensionWizard } from "@/components/DimensionWizard";
@@ -85,18 +85,13 @@ function GeneratePageContent() {
   // UI state
   const [selectedQuestion, setSelectedQuestion] = useState<number | null>(null);
   const [genError, setGenError] = useState<string | null>(null);
-  const [settings, setSettings] = useState<GenerateSettings>({
-    questionsPerDoc: 10,
-  });
-
   // Strategy state
   const [strategy, setStrategy] = useState<StrategyType>("simple");
   const [dimensions, setDimensions] = useState<Dimension[]>([]);
-  const [totalQuestions, setTotalQuestions] = useState(50);
+  const [totalQuestions, setTotalQuestions] = useState(30);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardInitialStep, setWizardInitialStep] = useState(1);
   const [realWorldQuestions, setRealWorldQuestions] = useState<string[]>([]);
-  const [totalSyntheticQuestions, setTotalSyntheticQuestions] = useState(50);
   const [realWorldModalOpen, setRealWorldModalOpen] = useState(false);
 
   // Selected document for viewing
@@ -206,13 +201,13 @@ function GeneratePageContent() {
     const strategyConfig: Record<string, unknown> = {};
 
     if (strategy === "simple") {
-      strategyConfig.queriesPerDoc = settings.questionsPerDoc;
+      strategyConfig.totalQuestions = totalQuestions;
     } else if (strategy === "dimension-driven") {
       strategyConfig.dimensions = dimensions;
       strategyConfig.totalQuestions = totalQuestions;
     } else if (strategy === "real-world-grounded") {
       strategyConfig.questions = realWorldQuestions;
-      strategyConfig.totalSyntheticQuestions = totalSyntheticQuestions;
+      strategyConfig.totalSyntheticQuestions = totalQuestions;
     }
 
     try {
@@ -365,8 +360,6 @@ function GeneratePageContent() {
                 </div>
                 <div className="p-4">
                   <GenerateConfig
-                    settings={settings}
-                    onChange={setSettings}
                     onGenerate={handleGenerate}
                     disabled={!hasDocuments}
                     generating={generating}
@@ -374,11 +367,11 @@ function GeneratePageContent() {
                     onStrategyChange={setStrategy}
                     dimensions={dimensions}
                     totalQuestions={totalQuestions}
+                    onTotalQuestionsChange={setTotalQuestions}
                     onOpenWizard={handleOpenWizard}
                     realWorldQuestions={realWorldQuestions}
-                    totalSyntheticQuestions={totalSyntheticQuestions}
-                    onTotalSyntheticChange={setTotalSyntheticQuestions}
                     onOpenRealWorldModal={() => setRealWorldModalOpen(true)}
+                    numDocs={documentsData?.length ?? 0}
                   />
                 </div>
               </div>

@@ -3,14 +3,9 @@
 import { StrategyType, Dimension } from "@/lib/types";
 import { StrategySelector } from "./StrategySelector";
 import { DimensionSummary } from "./DimensionSummary";
-
-export interface GenerateSettings {
-  questionsPerDoc: number;
-}
+import { TotalQuestionsSlider } from "./TotalQuestionsSlider";
 
 export function GenerateConfig({
-  settings,
-  onChange,
   onGenerate,
   disabled,
   generating,
@@ -18,14 +13,12 @@ export function GenerateConfig({
   onStrategyChange,
   dimensions,
   totalQuestions,
+  onTotalQuestionsChange,
   onOpenWizard,
   realWorldQuestions,
-  totalSyntheticQuestions,
-  onTotalSyntheticChange,
   onOpenRealWorldModal,
+  numDocs,
 }: {
-  settings: GenerateSettings;
-  onChange: (settings: GenerateSettings) => void;
   onGenerate: () => void;
   disabled: boolean;
   generating: boolean;
@@ -33,16 +26,12 @@ export function GenerateConfig({
   onStrategyChange: (strategy: StrategyType) => void;
   dimensions: Dimension[];
   totalQuestions: number;
+  onTotalQuestionsChange: (n: number) => void;
   onOpenWizard: () => void;
   realWorldQuestions: string[];
-  totalSyntheticQuestions: number;
-  onTotalSyntheticChange: (n: number) => void;
   onOpenRealWorldModal: () => void;
+  numDocs: number;
 }) {
-  function updateField(field: keyof GenerateSettings, value: number) {
-    onChange({ ...settings, [field]: value });
-  }
-
   const dimensionsConfigured = dimensions.length > 0;
   const realWorldConfigured = realWorldQuestions.length > 0;
   const canGenerate =
@@ -55,33 +44,18 @@ export function GenerateConfig({
       <div className="space-y-4">
         <StrategySelector value={strategy} onChange={onStrategyChange} />
 
-        <div className="border-t border-border pt-3">
-          {strategy === "simple" && (
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[11px] text-text-muted mb-1">
-                  Questions per document
-                </label>
-                <input
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={settings.questionsPerDoc}
-                  onChange={(e) =>
-                    updateField(
-                      "questionsPerDoc",
-                      parseInt(e.target.value) || 1,
-                    )
-                  }
-                  className="w-full bg-bg-surface border border-border rounded px-3 py-1.5 text-sm text-text
-                             focus:outline-none focus:border-accent/50 transition-colors"
-                />
-              </div>
-            </div>
-          )}
+        <div className="border-t border-border pt-3 space-y-3">
+          {/* Unified slider for all strategies */}
+          <TotalQuestionsSlider
+            value={totalQuestions}
+            onChange={onTotalQuestionsChange}
+            strategy={strategy}
+            numDocs={numDocs}
+          />
 
+          {/* Strategy-specific config (dimensions setup, real-world questions) */}
           {strategy === "dimension-driven" && (
-            <div className="space-y-3">
+            <div>
               {dimensionsConfigured ? (
                 <DimensionSummary
                   dimensions={dimensions}
@@ -101,36 +75,18 @@ export function GenerateConfig({
           )}
 
           {strategy === "real-world-grounded" && (
-            <div className="space-y-3">
+            <div>
               {realWorldConfigured ? (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-text">
-                      {realWorldQuestions.length} question{realWorldQuestions.length !== 1 ? "s" : ""} loaded
-                    </span>
-                    <button
-                      onClick={onOpenRealWorldModal}
-                      className="text-[10px] text-accent hover:text-accent/80 transition-colors cursor-pointer"
-                    >
-                      Edit
-                    </button>
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-text-muted mb-1">
-                      Synthetic questions to generate
-                    </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={500}
-                      value={totalSyntheticQuestions}
-                      onChange={(e) =>
-                        onTotalSyntheticChange(parseInt(e.target.value) || 0)
-                      }
-                      className="w-full bg-bg-surface border border-border rounded px-3 py-1.5 text-sm text-text
-                                 focus:outline-none focus:border-accent/50 transition-colors"
-                    />
-                  </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-text">
+                    {realWorldQuestions.length} question{realWorldQuestions.length !== 1 ? "s" : ""} loaded
+                  </span>
+                  <button
+                    onClick={onOpenRealWorldModal}
+                    className="text-[10px] text-accent hover:text-accent/80 transition-colors cursor-pointer"
+                  >
+                    Edit
+                  </button>
                 </div>
               ) : (
                 <button
