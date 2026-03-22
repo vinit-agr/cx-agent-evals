@@ -331,4 +331,105 @@ export default defineSchema({
   })
     .index("by_job_status", ["crawlJobId", "status"])
     .index("by_job_url", ["crawlJobId", "normalizedUrl"]),
+
+  // ── Agents ──────────────────────────────────────────────
+  agents: defineTable({
+    orgId: v.string(),
+    name: v.string(),
+
+    // Structured prompt sections
+    identity: v.object({
+      agentName: v.string(),
+      companyName: v.string(),
+      companyUrl: v.optional(v.string()),
+      companyContext: v.optional(v.string()),
+      roleDescription: v.string(),
+      brandVoice: v.optional(v.string()),
+    }),
+    guardrails: v.object({
+      outOfScope: v.optional(v.string()),
+      escalationRules: v.optional(v.string()),
+      compliance: v.optional(v.string()),
+    }),
+    responseStyle: v.object({
+      formatting: v.optional(v.string()),
+      length: v.optional(v.string()),
+      formality: v.optional(v.string()),
+      language: v.optional(v.string()),
+    }),
+    additionalInstructions: v.optional(v.string()),
+
+    model: v.string(),
+    enableReflection: v.boolean(),
+    retrieverIds: v.array(v.id("retrievers")),
+
+    status: v.union(
+      v.literal("draft"),
+      v.literal("ready"),
+      v.literal("error"),
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_org", ["orgId"]),
+
+  conversations: defineTable({
+    orgId: v.string(),
+    title: v.optional(v.string()),
+    agentIds: v.array(v.id("agents")),
+    status: v.union(v.literal("active"), v.literal("archived")),
+    createdAt: v.number(),
+  })
+    .index("by_org", ["orgId"]),
+
+  messages: defineTable({
+    conversationId: v.id("conversations"),
+    order: v.number(),
+    role: v.union(
+      v.literal("system"),
+      v.literal("user"),
+      v.literal("assistant"),
+      v.literal("tool_call"),
+      v.literal("tool_result"),
+    ),
+    content: v.string(),
+    agentId: v.optional(v.id("agents")),
+    toolCall: v.optional(
+      v.object({
+        toolCallId: v.string(),
+        toolName: v.string(),
+        toolArgs: v.string(),
+        retrieverId: v.optional(v.id("retrievers")),
+      }),
+    ),
+    toolResult: v.optional(
+      v.object({
+        toolCallId: v.string(),
+        toolName: v.string(),
+        result: v.string(),
+        retrieverId: v.optional(v.id("retrievers")),
+      }),
+    ),
+    status: v.union(
+      v.literal("pending"),
+      v.literal("streaming"),
+      v.literal("complete"),
+      v.literal("error"),
+    ),
+    usage: v.optional(
+      v.object({
+        promptTokens: v.number(),
+        completionTokens: v.number(),
+      }),
+    ),
+    createdAt: v.number(),
+  })
+    .index("by_conversation", ["conversationId", "order"]),
+
+  streamDeltas: defineTable({
+    messageId: v.id("messages"),
+    start: v.number(),
+    end: v.number(),
+    text: v.string(),
+  })
+    .index("by_message", ["messageId", "start"]),
 });
