@@ -9,7 +9,7 @@ export const byOrg = query({
     return ctx.db
       .query("agents")
       .withIndex("by_org", (q) => q.eq("orgId", orgId))
-      .order("desc")
+      .order("asc")
       .collect();
   },
 });

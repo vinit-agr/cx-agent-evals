@@ -9,11 +9,11 @@ interface AgentConfigPanelProps {
   agentId: Id<"agents">;
 }
 
-const sectionHeader = "text-text-muted text-[9px] uppercase tracking-wider mb-1.5";
+const sectionHeader = "text-text-muted text-[10px] uppercase tracking-wider mb-1.5";
 const container = "bg-bg-elevated border border-border rounded-lg p-3";
-const labelCls = "text-text-muted text-[9px]";
+const labelCls = "text-text-muted text-[10px]";
 const inputCls =
-  "w-full bg-bg-surface border border-border rounded-md px-2 py-1.5 text-[10px] text-text focus:border-accent/50 focus:outline-none";
+  "w-full bg-bg-surface border border-border rounded-md px-2.5 py-2 text-xs text-text focus:border-accent/50 focus:outline-none";
 const textareaCls = `${inputCls} min-h-[60px] resize-y`;
 const selectCls = inputCls;
 
@@ -123,6 +123,7 @@ export default function AgentConfigPanel({ agentId }: AgentConfigPanelProps) {
         enableReflection,
         retrieverIds,
         additionalInstructions: additionalInstructions || undefined,
+        status: "ready",
       });
       setLastSavedAt(Date.now());
     } finally {
@@ -153,7 +154,14 @@ export default function AgentConfigPanel({ agentId }: AgentConfigPanelProps) {
     return <div className="p-4 text-text-dim text-sm">Loading...</div>;
 
   return (
-    <div className="p-3.5 space-y-3.5 overflow-y-auto pb-16 relative">
+    <div className="flex flex-col h-full min-h-0">
+      {/* Sticky header */}
+      <div className="px-3.5 py-2.5 border-b border-border flex-shrink-0">
+        <span className="text-text text-sm font-semibold">Agent Configuration</span>
+      </div>
+
+      {/* Scrollable content */}
+      <div className="flex-1 overflow-y-auto p-3.5 space-y-3.5">
       {/* ── Section 1: Agent Name ── */}
       <div>
         <div className={sectionHeader}>Agent Name</div>
@@ -524,8 +532,10 @@ export default function AgentConfigPanel({ agentId }: AgentConfigPanelProps) {
         )}
       </div>
 
-      {/* ── Section 8: Save Button (sticky) ── */}
-      <div className="sticky bottom-0 left-0 right-0 bg-bg-elevated/95 backdrop-blur-sm border-t border-border -mx-3.5 px-3.5 py-2.5 mt-2">
+      </div>
+
+      {/* Sticky save footer */}
+      <div className="px-3.5 py-2.5 border-t border-border flex-shrink-0">
         <button
           onClick={handleSave}
           disabled={!isDirty || saving}
