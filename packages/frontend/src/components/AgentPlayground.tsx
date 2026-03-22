@@ -86,7 +86,9 @@ export default function AgentPlayground({ agentId }: AgentPlaygroundProps) {
     if (!conversationId) return;
     await clear({ conversationId });
     setConversationId(null);
-    initRef.current = null;
+    // Create a fresh playground conversation immediately
+    const newId = await getOrCreate({ agentId });
+    setConversationId(newId);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
