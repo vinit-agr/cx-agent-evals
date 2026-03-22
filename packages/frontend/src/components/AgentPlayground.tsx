@@ -166,34 +166,41 @@ export default function AgentPlayground({ agentId }: AgentPlaygroundProps) {
     }
   }
 
-  let pendingToolCalls: ToolCallEntry[] = [];
-  let toolGroupKey = "";
+  // Collect tool calls that follow each assistant message (they belong to that turn).
+  // Order in DB: user(N), assistant(N+1), tool_call(N+2), tool_result(N+3), ...
+  // Display order: user → tool_group → assistant
+  const toolCallsByAssistant = new Map<string, ToolCallEntry[]>();
+  let currentAssistantId: string | null = null;
   for (const m of messages) {
-    if (m.role === "user") {
-      displayItems.push({ type: "user", msg: m });
-    } else if (m.role === "tool_call") {
-      if (!toolGroupKey) toolGroupKey = m._id;
+    if (m.role === "assistant") {
+      currentAssistantId = m._id;
+    } else if (m.role === "tool_call" && currentAssistantId) {
+      if (!toolCallsByAssistant.has(currentAssistantId)) {
+        toolCallsByAssistant.set(currentAssistantId, []);
+      }
       const result = m.toolCall?.toolCallId ? toolResultMap.get(m.toolCall.toolCallId) : undefined;
-      pendingToolCalls.push({
+      toolCallsByAssistant.get(currentAssistantId)!.push({
         toolName: m.toolCall?.toolName ?? "tool",
         toolArgs: m.toolCall?.toolArgs,
         toolResult: result?.toolResult?.result,
       });
-    } else if (m.role === "tool_result") {
-      // handled via toolResultMap
+    } else if (m.role === "user") {
+      currentAssistantId = null;
+    }
+  }
+
+  for (const m of messages) {
+    if (m.role === "user") {
+      displayItems.push({ type: "user", msg: m });
     } else if (m.role === "assistant") {
-      // Flush any pending tool calls as a group ABOVE this assistant message
-      if (pendingToolCalls.length > 0) {
-        displayItems.push({ type: "tool_group", calls: pendingToolCalls, key: toolGroupKey });
-        pendingToolCalls = [];
-        toolGroupKey = "";
+      // Show tool group ABOVE the assistant message if any tools were called
+      const calls = toolCallsByAssistant.get(m._id);
+      if (calls && calls.length > 0) {
+        displayItems.push({ type: "tool_group", calls, key: `tg-${m._id}` });
       }
       displayItems.push({ type: "assistant", msg: m });
     }
-  }
-  // If tool calls are still pending (streaming, no assistant message yet), show them
-  if (pendingToolCalls.length > 0) {
-    displayItems.push({ type: "tool_group", calls: pendingToolCalls, key: toolGroupKey });
+    // tool_call and tool_result are rendered via the grouped pill, skip individually
   }
 
   return (
