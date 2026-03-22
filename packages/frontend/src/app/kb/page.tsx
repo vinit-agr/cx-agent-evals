@@ -9,10 +9,7 @@ import { useKbFromUrl } from "@/lib/useKbFromUrl";
 import { FileUploader } from "@/components/FileUploader";
 import { CreateKBModal } from "@/components/CreateKBModal";
 import { MarkdownViewer } from "@/components/MarkdownViewer";
-
-const INDUSTRIES = [
-  "finance", "insurance", "healthcare", "telecom", "education", "government",
-] as const;
+import { INDUSTRIES } from "@/lib/constants";
 
 export default function KBPage() {
   return (

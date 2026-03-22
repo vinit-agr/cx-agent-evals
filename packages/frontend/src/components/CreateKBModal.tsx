@@ -4,22 +4,7 @@ import { useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
-
-const INDUSTRIES = [
-  "finance",
-  "insurance",
-  "healthcare",
-  "telecom",
-  "education",
-  "government",
-] as const;
-
-const ENTITY_TYPES = [
-  "company",
-  "government-state",
-  "government-county",
-  "industry-aggregate",
-] as const;
+import { INDUSTRIES, ENTITY_TYPES } from "@/lib/constants";
 
 interface CreateKBModalProps {
   open: boolean;
