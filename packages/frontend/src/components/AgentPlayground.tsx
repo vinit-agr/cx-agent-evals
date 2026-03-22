@@ -92,7 +92,7 @@ export default function AgentPlayground({ agentId }: AgentPlaygroundProps) {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && !e.shiftKey && !streamingMessage) {
       e.preventDefault();
       handleSend();
     }
@@ -201,15 +201,22 @@ export default function AgentPlayground({ agentId }: AgentPlaygroundProps) {
             onKeyDown={handleKeyDown}
             placeholder="Type a message..."
             className="flex-1 bg-bg-surface border border-border rounded-lg px-3 py-2 text-sm text-text focus:border-accent/50 focus:outline-none"
-            disabled={sending || !conversationId}
+            disabled={!conversationId}
           />
-          <button
-            onClick={handleSend}
-            disabled={sending || !input.trim() || !conversationId}
-            className="bg-accent text-bg px-4 py-2 rounded-lg text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
-          >
-            Send
-          </button>
+          <div className="relative group">
+            <button
+              onClick={handleSend}
+              disabled={sending || !input.trim() || !conversationId || !!streamingMessage}
+              className="bg-accent text-bg px-4 py-2 rounded-lg text-sm font-medium hover:bg-accent/90 transition-colors disabled:opacity-50"
+            >
+              Send
+            </button>
+            {streamingMessage && (
+              <div className="absolute bottom-full right-0 mb-1.5 px-2.5 py-1.5 bg-bg-elevated border border-border rounded-md text-[10px] text-text-muted whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                Waiting for response to complete...
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
