@@ -5,6 +5,8 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
 import ToolCallChip from "@/components/ToolCallChip";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 // Grouped tool calls pill — shows "N tools called" with expandable list
 function ToolCallGroup({ calls, isLive }: {
@@ -62,6 +64,7 @@ export default function AgentPlayground({ agentId }: AgentPlaygroundProps) {
   const [conversationId, setConversationId] = useState<Id<"conversations"> | null>(null);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [rawMode, setRawMode] = useState(false);
 
   const getOrCreate = useMutation(api.agents.orchestration.getOrCreatePlayground);
   const send = useMutation(api.agents.orchestration.sendMessage);
@@ -208,12 +211,28 @@ export default function AgentPlayground({ agentId }: AgentPlaygroundProps) {
       {/* Sticky header */}
       <div className="px-4 py-2.5 border-b border-border flex items-center justify-between flex-shrink-0">
         <span className="text-sm text-text font-semibold">Playground</span>
-        <button
-          onClick={handleClear}
-          className="text-[10px] text-text-dim hover:text-text-muted transition-colors"
-        >
-          Clear chat
-        </button>
+        <div className="flex items-center gap-3">
+          <div className="inline-flex items-center bg-bg-surface border border-border rounded-full text-[10px] overflow-hidden">
+            <button
+              onClick={() => setRawMode(false)}
+              className={`px-2 py-0.5 transition-colors ${!rawMode ? "bg-accent/20 text-accent" : "text-text-muted hover:text-text"}`}
+            >
+              Rendered
+            </button>
+            <button
+              onClick={() => setRawMode(true)}
+              className={`px-2 py-0.5 transition-colors ${rawMode ? "bg-accent/20 text-accent" : "text-text-muted hover:text-text"}`}
+            >
+              Raw
+            </button>
+          </div>
+          <button
+            onClick={handleClear}
+            className="text-[10px] text-text-dim hover:text-text-muted transition-colors"
+          >
+            Clear chat
+          </button>
+        </div>
       </div>
 
       {/* Scrollable message area */}
@@ -255,13 +274,24 @@ export default function AgentPlayground({ agentId }: AgentPlaygroundProps) {
                       <p className="text-sm text-red-400">
                         Agent is not responding. Check that ANTHROPIC_API_KEY (or OPENAI_API_KEY for OpenAI models) is set in Convex dashboard environment variables.
                       </p>
-                    ) : (
-                      <p className={`text-sm whitespace-pre-wrap ${isError ? "text-red-400" : "text-text"}`}>
+                    ) : isError ? (
+                      <p className="text-sm whitespace-pre-wrap text-red-400">{displayContent}</p>
+                    ) : rawMode ? (
+                      <p className="text-sm whitespace-pre-wrap text-text">
                         {displayContent}
                         {isStreaming && !isStuck && (
                           <span className="inline-block w-1.5 h-3 bg-accent animate-pulse rounded-sm ml-0.5 align-middle" />
                         )}
                       </p>
+                    ) : (
+                      <div className="text-sm text-text prose-agent">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {displayContent || ""}
+                        </ReactMarkdown>
+                        {isStreaming && !isStuck && (
+                          <span className="inline-block w-1.5 h-3 bg-accent animate-pulse rounded-sm ml-0.5 align-middle" />
+                        )}
+                      </div>
                     )}
                   </div>
                 </div>
