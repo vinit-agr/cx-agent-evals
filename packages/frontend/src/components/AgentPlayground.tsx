@@ -6,6 +6,54 @@ import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
 import ToolCallChip from "@/components/ToolCallChip";
 
+// Grouped tool calls pill — shows "N tools called" with expandable list
+function ToolCallGroup({ calls, isLive }: {
+  calls: Array<{ toolName: string; toolArgs?: string; toolResult?: string }>;
+  isLive: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const allDone = calls.every((c) => c.toolResult !== undefined);
+  const lastCall = calls[calls.length - 1];
+  const displayName = (name: string) => name.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[80%]">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 bg-bg-elevated border border-border rounded-lg text-[10px] hover:border-accent/30 transition-colors"
+        >
+          <span className="text-accent">&#9889;</span>
+          {isLive && !allDone ? (
+            <span className="text-text-muted">
+              Calling <strong className="text-text font-medium">{displayName(lastCall.toolName)}</strong>
+              <span className="inline-block w-1 h-1 bg-accent rounded-full ml-1 animate-pulse align-middle" />
+            </span>
+          ) : (
+            <span className="text-text-muted">
+              <strong className="text-text font-medium">{calls.length}</strong> tool{calls.length !== 1 ? "s" : ""} called
+            </span>
+          )}
+          <span className="text-text-dim ml-0.5">{expanded ? "▾" : "▸"}</span>
+        </button>
+
+        {expanded && (
+          <div className="mt-1 ml-2 space-y-1">
+            {calls.map((call, i) => (
+              <ToolCallChip
+                key={i}
+                toolName={call.toolName}
+                toolArgs={call.toolArgs}
+                toolResult={call.toolResult}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface AgentPlaygroundProps {
   agentId: Id<"agents">;
 }
@@ -98,7 +146,19 @@ export default function AgentPlayground({ agentId }: AgentPlaygroundProps) {
     }
   };
 
-  // Build a map of toolCallId -> tool_result message for pairing
+  // Build display items: group consecutive tool_call/tool_result into a single group
+  // placed above the following assistant message
+  type ToolCallEntry = {
+    toolName: string;
+    toolArgs?: string;
+    toolResult?: string;
+  };
+  type DisplayItem =
+    | { type: "user"; msg: typeof messages[number] }
+    | { type: "tool_group"; calls: ToolCallEntry[]; key: string }
+    | { type: "assistant"; msg: typeof messages[number] };
+
+  const displayItems: DisplayItem[] = [];
   const toolResultMap = new Map<string, typeof messages[number]>();
   for (const m of messages) {
     if (m.role === "tool_result" && m.toolResult?.toolCallId) {
@@ -106,8 +166,35 @@ export default function AgentPlayground({ agentId }: AgentPlaygroundProps) {
     }
   }
 
-  // Filter out tool_result messages (they are displayed inline with their tool_call)
-  const visibleMessages = messages.filter((m) => m.role !== "tool_result");
+  let pendingToolCalls: ToolCallEntry[] = [];
+  let toolGroupKey = "";
+  for (const m of messages) {
+    if (m.role === "user") {
+      displayItems.push({ type: "user", msg: m });
+    } else if (m.role === "tool_call") {
+      if (!toolGroupKey) toolGroupKey = m._id;
+      const result = m.toolCall?.toolCallId ? toolResultMap.get(m.toolCall.toolCallId) : undefined;
+      pendingToolCalls.push({
+        toolName: m.toolCall?.toolName ?? "tool",
+        toolArgs: m.toolCall?.toolArgs,
+        toolResult: result?.toolResult?.result,
+      });
+    } else if (m.role === "tool_result") {
+      // handled via toolResultMap
+    } else if (m.role === "assistant") {
+      // Flush any pending tool calls as a group ABOVE this assistant message
+      if (pendingToolCalls.length > 0) {
+        displayItems.push({ type: "tool_group", calls: pendingToolCalls, key: toolGroupKey });
+        pendingToolCalls = [];
+        toolGroupKey = "";
+      }
+      displayItems.push({ type: "assistant", msg: m });
+    }
+  }
+  // If tool calls are still pending (streaming, no assistant message yet), show them
+  if (pendingToolCalls.length > 0) {
+    displayItems.push({ type: "tool_group", calls: pendingToolCalls, key: toolGroupKey });
+  }
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -124,41 +211,29 @@ export default function AgentPlayground({ agentId }: AgentPlaygroundProps) {
 
       {/* Scrollable message area */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
-        {visibleMessages.length === 0 && (
+        {displayItems.length === 0 && (
           <div className="text-center text-text-dim text-xs mt-12">
             Send a message to start testing your agent.
           </div>
         )}
 
-        {visibleMessages.map((msg) => {
-          if (msg.role === "user") {
+        {displayItems.map((item) => {
+          if (item.type === "user") {
             return (
-              <div key={msg._id} className="flex justify-end">
+              <div key={item.msg._id} className="flex justify-end">
                 <div className="max-w-[80%] bg-accent/10 border border-accent/20 rounded-xl px-3 py-2">
-                  <p className="text-sm text-text whitespace-pre-wrap">{msg.content}</p>
+                  <p className="text-sm text-text whitespace-pre-wrap">{item.msg.content}</p>
                 </div>
               </div>
             );
           }
 
-          if (msg.role === "tool_call") {
-            const result = msg.toolCall?.toolCallId
-              ? toolResultMap.get(msg.toolCall.toolCallId)
-              : undefined;
-            return (
-              <div key={msg._id} className="flex justify-start">
-                <div className="max-w-[80%]">
-                  <ToolCallChip
-                    toolName={msg.toolCall?.toolName ?? "tool"}
-                    toolArgs={msg.toolCall?.toolArgs}
-                    toolResult={result?.toolResult?.result}
-                  />
-                </div>
-              </div>
-            );
+          if (item.type === "tool_group") {
+            return <ToolCallGroup key={item.key} calls={item.calls} isLive={!!streamingMessage} />;
           }
 
-          if (msg.role === "assistant") {
+          if (item.type === "assistant") {
+            const msg = item.msg;
             const isStreaming = msg.status === "streaming";
             const isStuck = stuckMessageId === msg._id;
             const isError = msg.status === "error";
