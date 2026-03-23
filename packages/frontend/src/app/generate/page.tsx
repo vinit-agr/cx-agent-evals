@@ -81,17 +81,15 @@ function GeneratePageContent() {
     browseDatasetId ? { datasetId: browseDatasetId } : "skip",
   );
 
-  // Auto-switch to generate mode when no datasets exist
+  // Set mode based on whether datasets exist — runs when kbDatasets loads or KB changes
   useEffect(() => {
-    if (kbDatasets !== undefined && kbDatasets.length === 0) {
-      setMode("generate");
-    }
+    if (kbDatasets === undefined) return; // wait for query to load
+    setMode(kbDatasets.length > 0 ? "browse" : "generate");
   }, [kbDatasets]);
 
   // Reset browse selection when KB changes
   useEffect(() => {
     setBrowseDatasetId(null);
-    setMode(kbDatasets && kbDatasets.length > 0 ? "browse" : "generate");
   }, [selectedKbId]);
 
   // Auto-restore active job state when returning to the page
@@ -100,6 +98,7 @@ function GeneratePageContent() {
       setJobId(activeJob._id);
       setDatasetId(activeJob.datasetId);
       setBrowseDatasetId(activeJob.datasetId);
+      setMode("browse");
     }
   }, [activeJob, jobId]);
 
@@ -264,6 +263,7 @@ function GeneratePageContent() {
       setDatasetId(result.datasetId);
       setJobId(result.jobId);
       setBrowseDatasetId(result.datasetId);
+      setMode("browse");
     } catch (err) {
       setGenError(err instanceof Error ? err.message : "Failed to start generation");
     }
@@ -393,7 +393,7 @@ function GeneratePageContent() {
                       }}
                       className={mode === "generate"
                         ? "text-[11px] text-accent hover:text-accent/80 transition-colors"
-                        : "px-2.5 py-1 text-[11px] font-medium text-accent border border-accent/30 rounded hover:bg-accent/10 transition-colors"
+                        : "px-2.5 py-1 text-[11px] font-medium bg-accent text-bg-elevated rounded hover:bg-accent/90 transition-colors"
                       }
                     >
                       {mode === "generate" ? "View Datasets" : "+ New Dataset"}
