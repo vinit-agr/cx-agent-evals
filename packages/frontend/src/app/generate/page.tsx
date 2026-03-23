@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState, useEffect } from "react";
+import { Suspense, useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "@/lib/convex";
 import { Id } from "@convex/_generated/dataModel";
@@ -81,20 +81,34 @@ function GeneratePageContent() {
     browseDatasetId ? { datasetId: browseDatasetId } : "skip",
   );
 
-  // Set mode based on whether datasets exist — runs when kbDatasets loads or KB changes
+  // Refs to prevent effects from overriding explicit user mode choices
+  const initialModeSet = useRef(false);
+  const hasRestoredJob = useRef(false);
+
+  // Set initial mode based on whether datasets exist.
+  // Only auto-sets mode once per KB — after that, user controls mode explicitly.
   useEffect(() => {
-    if (kbDatasets === undefined) return; // wait for query to load
-    setMode(kbDatasets.length > 0 ? "browse" : "generate");
+    if (kbDatasets === undefined) return;
+    if (!initialModeSet.current) {
+      initialModeSet.current = true;
+      setMode(kbDatasets.length > 0 ? "browse" : "generate");
+    } else if (kbDatasets.length === 0) {
+      // Always switch to generate if all datasets are deleted
+      setMode("generate");
+    }
   }, [kbDatasets]);
 
-  // Reset browse selection when KB changes
+  // Reset browse selection and mode tracking when KB changes
   useEffect(() => {
     setBrowseDatasetId(null);
+    initialModeSet.current = false;
+    hasRestoredJob.current = false;
   }, [selectedKbId]);
 
-  // Auto-restore active job state when returning to the page
+  // Auto-restore active job state once when returning to the page
   useEffect(() => {
-    if (activeJob && !jobId) {
+    if (activeJob && !jobId && !hasRestoredJob.current) {
+      hasRestoredJob.current = true;
       setJobId(activeJob._id);
       setDatasetId(activeJob.datasetId);
       setBrowseDatasetId(activeJob.datasetId);
