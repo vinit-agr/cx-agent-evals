@@ -48,3 +48,17 @@ export type UploadSSEEvent =
   | { type: "progress"; uploaded: number; total: number; failed: number }
   | { type: "done"; datasetName: string; datasetUrl: string; uploaded: number; failed: number }
   | { type: "error"; error: string };
+
+export interface PromptPreferences {
+  questionTypes: string[];
+  tone: string;
+  focusAreas: string;
+}
+
+export interface UnifiedWizardConfig {
+  realWorldQuestions: string[];
+  dimensions: Dimension[];
+  preferences: PromptPreferences;
+  totalQuestions: number;
+  allocationOverrides: Record<string, number>;
+}
