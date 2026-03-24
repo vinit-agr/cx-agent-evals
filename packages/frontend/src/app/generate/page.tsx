@@ -7,14 +7,12 @@ import { Id } from "@convex/_generated/dataModel";
 import { Header } from "@/components/Header";
 import { useKbFromUrl } from "@/lib/useKbFromUrl";
 import { KBDropdown } from "@/components/KBDropdown";
-import { GenerateConfig } from "@/components/GenerateConfig";
 import { QuestionList } from "@/components/QuestionList";
 import { DocumentViewer } from "@/components/DocumentViewer";
-import { DimensionWizard } from "@/components/DimensionWizard";
-import { RealWorldQuestionsModal } from "@/components/RealWorldQuestionsModal";
+import { GenerationWizard } from "@/components/GenerationWizard";
 import { DeleteDatasetModal } from "@/components/DeleteDatasetModal";
 import { GenerationBanner } from "@/components/GenerationBanner";
-import { StrategyType, Dimension, DocumentInfo, GeneratedQuestion } from "@/lib/types";
+import { DocumentInfo, GeneratedQuestion } from "@/lib/types";
 
 export default function GeneratePage() {
   return (
@@ -50,7 +48,6 @@ function GeneratePageContent() {
   // Dataset info
   const dataset = useQuery(api.crud.datasets.get, datasetId ? { id: datasetId } : "skip");
 
-  const startGeneration = useMutation(api.generation.orchestration.startGeneration);
   const deleteDataset = useMutation(api.crud.datasets.deleteDataset);
 
   // Datasets for selected KB
@@ -126,15 +123,6 @@ function GeneratePageContent() {
     strategy: string;
   } | null>(null);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  // Strategy state
-  const [strategy, setStrategy] = useState<StrategyType>("simple");
-  const [dimensions, setDimensions] = useState<Dimension[]>([]);
-  const [totalQuestions, setTotalQuestions] = useState(30);
-  const [wizardOpen, setWizardOpen] = useState(false);
-  const [wizardInitialStep, setWizardInitialStep] = useState(1);
-  const [realWorldQuestions, setRealWorldQuestions] = useState<string[]>([]);
-  const [realWorldModalOpen, setRealWorldModalOpen] = useState(false);
-
   // Selected document for viewing
   const [selectedDocId, setSelectedDocId] = useState<Id<"documents"> | null>(null);
   const selectedDocData = useQuery(
@@ -158,34 +146,6 @@ function GeneratePageContent() {
     content: "", // Content loaded on demand via selectedDocData
     contentLength: d.contentLength,
   }));
-
-  // Load saved configs from localStorage on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem("rag-eval:dimension-config");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed.dimensions) && parsed.dimensions.length > 0) {
-          setDimensions(parsed.dimensions);
-          setTotalQuestions(parsed.totalQuestions ?? 50);
-          setStrategy("dimension-driven");
-        }
-      }
-    } catch {
-      // Ignore corrupted localStorage
-    }
-    try {
-      const saved = localStorage.getItem("rag-eval:real-world-questions");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setRealWorldQuestions(parsed);
-        }
-      }
-    } catch {
-      // Ignore corrupted localStorage
-    }
-  }, []);
 
   async function handleDeleteDataset() {
     if (!deleteTarget) return;
@@ -211,75 +171,6 @@ function GeneratePageContent() {
     setBrowseDatasetId(null);
     if (kbDatasets && kbDatasets.length > 0) {
       setMode("browse");
-    }
-  }
-
-  function handleOpenWizard() {
-    if (dimensions.length > 0) {
-      setWizardInitialStep(2);
-    } else {
-      setWizardInitialStep(1);
-    }
-    setWizardOpen(true);
-  }
-
-  function handleWizardSave(dims: Dimension[], total: number) {
-    setDimensions(dims);
-    setTotalQuestions(total);
-    setWizardOpen(false);
-    try {
-      localStorage.setItem(
-        "rag-eval:dimension-config",
-        JSON.stringify({ dimensions: dims, totalQuestions: total }),
-      );
-    } catch {
-      // localStorage full or unavailable
-    }
-  }
-
-  function handleRealWorldSave(qs: string[]) {
-    setRealWorldQuestions(qs);
-    setRealWorldModalOpen(false);
-    try {
-      localStorage.setItem("rag-eval:real-world-questions", JSON.stringify(qs));
-    } catch {
-      // localStorage full or unavailable
-    }
-  }
-
-  async function handleGenerate() {
-    if (!selectedKbId || generating) return;
-
-    setGenError(null);
-    setSelectedQuestion(null);
-    setSelectedDocId(null);
-
-    const strategyConfig: Record<string, unknown> = {};
-
-    if (strategy === "simple") {
-      strategyConfig.totalQuestions = totalQuestions;
-    } else if (strategy === "dimension-driven") {
-      strategyConfig.dimensions = dimensions;
-      strategyConfig.totalQuestions = totalQuestions;
-    } else if (strategy === "real-world-grounded") {
-      strategyConfig.questions = realWorldQuestions;
-      strategyConfig.totalSyntheticQuestions = totalQuestions;
-    }
-
-    try {
-      const result = await startGeneration({
-        kbId: selectedKbId,
-        name: `${strategy}-${Date.now()}`,
-        strategy,
-        strategyConfig,
-      });
-
-      setDatasetId(result.datasetId);
-      setJobId(result.jobId);
-      setBrowseDatasetId(result.datasetId);
-      setMode("browse");
-    } catch (err) {
-      setGenError(err instanceof Error ? err.message : "Failed to start generation");
     }
   }
 
@@ -477,20 +368,23 @@ function GeneratePageContent() {
                   Generation Config
                 </div>
                 <div className="p-4">
-                  <GenerateConfig
-                    onGenerate={handleGenerate}
-                    disabled={!hasDocuments}
+                  <GenerationWizard
+                    kbId={selectedKbId!}
+                    documents={(documentsData ?? []).map((d) => ({
+                      _id: d._id as string,
+                      docId: d.docId,
+                      title: d.title,
+                      priority: 3,
+                    }))}
                     generating={generating}
                     disabledReason={activeJob ? "Only one generation at a time" : undefined}
-                    strategy={strategy}
-                    onStrategyChange={setStrategy}
-                    dimensions={dimensions}
-                    totalQuestions={totalQuestions}
-                    onTotalQuestionsChange={setTotalQuestions}
-                    onOpenWizard={handleOpenWizard}
-                    realWorldQuestions={realWorldQuestions}
-                    onOpenRealWorldModal={() => setRealWorldModalOpen(true)}
-                    numDocs={documentsData?.length ?? 0}
+                    onGenerated={(dsId, jId) => {
+                      setDatasetId(dsId);
+                      setJobId(jId);
+                      setBrowseDatasetId(dsId);
+                      setMode("browse");
+                    }}
+                    onError={setGenError}
                   />
                 </div>
               </div>
@@ -529,26 +423,6 @@ function GeneratePageContent() {
           <DocumentViewer doc={selectedDoc} question={selectedQ} />
         </div>
       </div>
-
-      {/* Dimension Wizard Modal */}
-      {wizardOpen && (
-        <DimensionWizard
-          initialDimensions={dimensions.length > 0 ? dimensions : undefined}
-          initialTotalQuestions={totalQuestions}
-          initialStep={wizardInitialStep}
-          onSave={handleWizardSave}
-          onClose={() => setWizardOpen(false)}
-        />
-      )}
-
-      {/* Real-World Questions Modal */}
-      {realWorldModalOpen && (
-        <RealWorldQuestionsModal
-          initialQuestions={realWorldQuestions}
-          onSave={handleRealWorldSave}
-          onClose={() => setRealWorldModalOpen(false)}
-        />
-      )}
 
       {/* Delete Dataset Modal */}
       {deleteTarget && (
