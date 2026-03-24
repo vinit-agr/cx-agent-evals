@@ -73,8 +73,8 @@ eval-lib/src/synthetic-datagen/
 
 ```
 backend/convex/generation/
-  actions.ts         — New generateUnified action (single action, per-doc calls inside)
-  orchestration.ts   — Simplified: one WorkPool action, no separate ground-truth phase
+  actions.ts         — Two new actions: prepareGeneration (Steps 1-3) + generateForDocument (Steps 4-6, per doc)
+  orchestration.ts   — Two-phase WorkPool: prepare → per-doc generation → deficit reconciliation on completion
 ```
 
 ### Data Model Changes
@@ -83,6 +83,9 @@ backend/convex/generation/
 documents table:       + priority (number, 1-5, default 3)
 datasets table:        strategyConfig stores unified config shape
 generationJobs table:  phase field simplified (no "ground-truth" phase — citations come inline)
+                       + docsProcessed (number, default 0)
+                       + totalDocs (number)
+                       + currentDocName (optional string, for UI display)
 ```
 
 ---
@@ -95,6 +98,7 @@ generationJobs table:  phase field simplified (no "ground-truth" phase — citat
 interface UnifiedGenerationConfig {
   // Always present
   totalQuestions: number;
+  model?: string;                // e.g., "gpt-4o" — defaults to getModel() fallback
   promptPreferences: {
     questionTypes: string[];     // e.g., ["factoid", "comparison", "procedural"]
     tone: string;                // e.g., "professional but accessible"
@@ -123,6 +127,8 @@ quota(doc) = round(weight(doc) / totalWeight * totalQuestions)
 ```
 
 Rounding remainder goes to highest-priority documents first. Sum always equals `totalQuestions`.
+
+**When `totalQuestions < numDocs`**: Lower-priority documents are skipped (quota = 0). The system prioritizes higher-priority documents and logs a note: "Prioritizing higher-priority documents — N lower-priority documents skipped due to limited question budget." Documents are sorted by priority descending; the first `totalQuestions` docs each get 1 question minimum, the rest get 0.
 
 **Manual override**: If the user sets allocation percentages, those are used directly instead of priority-based calculation. The UI enforces they sum to 100%.
 
@@ -160,8 +166,8 @@ For each document, determine the generation scenario based on available inputs:
 
 | Scenario | Condition | Behavior |
 |----------|-----------|----------|
-| **1** | `matched >= quota` | Top `quota` real-world questions by score become direct-reuse. LLM call extracts citations only. |
-| **2** | `0 < matched < quota` | All matched → direct-reuse. LLM generates `quota - matched` new questions with: matched as few-shot examples + dimension combos (if any) + preferences. Citations for all. |
+| **1** | `matched >= quota` | Top `quota` real-world questions by score are direct-reuse candidates. LLM call extracts citations. If citation extraction fails for a direct-reuse question (not actually answerable from this doc), demote it to a style example and generate a replacement. |
+| **2** | `0 < matched < quota` | All matched → direct-reuse candidates (validated via citation extraction, demoted to style examples if citation fails). LLM generates `quota - matched` new questions with: matched as few-shot examples + dimension combos (if any) + preferences. Citations for all. |
 | **3** | `matched == 0`, combos available | LLM generates all `quota` questions with: dimension combos + real-world examples from other docs (if any) + preferences. |
 | **4** | `matched == 0`, no combos | LLM generates all `quota` questions with: preferences only + real-world examples from other docs (if any). Equivalent to current simple strategy. |
 
@@ -214,7 +220,7 @@ Output JSON:
 
 **Concurrency**: Per-document calls run with `mapWithConcurrency(docs, fn, 5)` inside the single Convex action.
 
-**Large documents**: If a document exceeds 20K characters, split into chunks with ~2K overlap. Run separate calls per chunk, then merge and deduplicate questions.
+**Large documents**: If a document exceeds 20K characters, split into chunks at paragraph boundaries with ~2K character overlap. Run separate calls per chunk, distributing the document's quota across chunks proportionally by length. No deduplication needed since each chunk has its own sub-quota. Citations are validated against the full original document (not the chunk) to ensure correct global offsets.
 
 **Implementation**: `per-doc-generation.ts`
 
@@ -271,9 +277,9 @@ priority: v.optional(v.number()),  // 1-5, default 3
 function calculateQuotas(
   docs: Array<{ id: string; priority: number }>,
   totalQuestions: number,
-  overrides?: Map<string, number>,  // docId → percentage
+  overrides?: Record<string, number>,  // docId → percentage
 ): Map<string, number> {
-  if (overrides && overrides.size > 0) {
+  if (overrides && Object.keys(overrides).length > 0) {
     // Manual override mode: percentages → absolute counts
     // Rounding remainder to highest-percentage doc
     return applyOverrides(overrides, totalQuestions);
@@ -360,22 +366,39 @@ function calculateQuotas(
 
 ## Backend Changes
 
-### New Action: `generateUnified`
+### Action Architecture: Two-Phase WorkPool
 
-Single Convex action that runs the full pipeline:
+To stay within Convex's ~10 minute action timeout, the pipeline splits into two phases:
+
+**Phase 1 action: `prepareGeneration`** (single action)
+- Loads corpus, calculates per-document quotas
+- Embeds and matches real-world questions to documents (if provided)
+- Filters dimension combos (if provided)
+- Stores the computed plan (quotas, matches, validCombos) in a temporary record
+- Enqueues one Phase 2 action per document via WorkPool
+
+**Phase 2 actions: `generateForDocument`** (one per document, parallel via WorkPool)
+- Receives: document content, quota, matched real-world questions, valid combos, preferences
+- Runs single LLM call for generation + citations
+- Validates citations via fuzzy matching
+- Retries failed citations once
+- Inserts validated questions into Convex
+- Reports progress via mutation
 
 ```typescript
-export const generateUnified = internalAction({
+// Phase 1: Preparation
+export const prepareGeneration = internalAction({
   args: {
     datasetId: v.id("datasets"),
     kbId: v.id("knowledgeBases"),
-    strategyConfig: v.any(),  // UnifiedGenerationConfig
+    jobId: v.id("generationJobs"),
+    strategyConfig: v.any(),
   },
   handler: async (ctx, args) => {
     const config = args.strategyConfig as UnifiedGenerationConfig;
     const { corpus, docs } = await loadCorpusFromKb(ctx, args.kbId);
 
-    // Step 1: Quota allocation
+    // Step 1: Quota allocation (skip docs with 0 quota)
     const quotas = calculateQuotas(docs, config.totalQuestions);
 
     // Step 2: Match real-world questions (if provided)
@@ -388,33 +411,57 @@ export const generateUnified = internalAction({
       ? await filterCombinations(config.dimensions, llmClient, model)
       : [];
 
-    // Step 4-5: Per-document generation (concurrent)
-    const allQuestions = await mapWithConcurrency(
-      docs,
-      async (doc) => generateForDocument(doc, quotas, matchedByDoc, validCombos, config),
-      5,
-    );
+    // Store plan and update job with totalDocs
+    const docsWithQuota = docs.filter(d => (quotas.get(d.id) ?? 0) > 0);
+    await ctx.runMutation(internal.generation.orchestration.savePlanAndEnqueueDocs, {
+      jobId: args.jobId,
+      datasetId: args.datasetId,
+      plan: { quotas, matchedByDoc, validCombos, config },
+      docIds: docsWithQuota.map(d => d.id),
+    });
+  },
+});
 
-    // Step 6: Citation validation
-    const validated = await validateCitations(allQuestions.flat(), corpus);
-
-    // Step 7: Deficit reconciliation (if needed)
-    const final = await reconcileDeficit(validated, docs, quotas, config);
-
-    // Insert questions in batches
-    for (const batch of chunk(final, QUESTION_INSERT_BATCH_SIZE)) {
-      await ctx.runMutation(internal.crud.questions.insertBatch, { ... });
-    }
-
-    return { questionsGenerated: final.length };
+// Phase 2: Per-document generation (one WorkPool action per doc)
+export const generateForDocument = internalAction({
+  args: {
+    datasetId: v.id("datasets"),
+    kbId: v.id("knowledgeBases"),
+    jobId: v.id("generationJobs"),
+    docId: v.string(),
+    quota: v.number(),
+    matchedQuestions: v.any(),   // real-world questions matched to this doc
+    validCombos: v.any(),        // filtered dimension combos
+    config: v.any(),             // UnifiedGenerationConfig
+  },
+  handler: async (ctx, args) => {
+    // Build scenario-appropriate prompt
+    // Single LLM call: generate questions + citations
+    // Fuzzy-match citations, replace with exact text
+    // Retry failed citations once
+    // Insert validated questions
+    // Report progress
   },
 });
 ```
 
+### Orchestration Flow
+
+```
+startGeneration mutation
+  └→ enqueue prepareGeneration via WorkPool
+       └→ onPrepareComplete callback
+            └→ enqueue N × generateForDocument via WorkPool
+                 └→ onDocGenerated callback (per doc)
+                      └→ update progress (docsProcessed++)
+                      └→ when all docs done: reconcile deficit, finalize job, trigger LangSmith sync
+```
+
 ### Orchestration Simplification
 
-- `startGeneration` mutation: always enqueues `generateUnified` (no strategy branching)
-- `onQuestionGenerated` callback: marks job complete (no Phase 2 ground-truth transition)
+- `startGeneration` mutation: enqueues `prepareGeneration` (no strategy branching)
+- `onPrepareComplete` callback: receives plan, enqueues per-doc actions
+- `onDocGenerated` callback: tracks per-doc completion, handles deficit reconciliation when all docs finish
 - Remove `onGroundTruthAssigned` callback entirely
 - Remove `assignGroundTruthForQuestion` action
 
@@ -516,3 +563,6 @@ After match, **replace** LLM excerpt with actual document text at matched positi
 | Wizard step order | Real-world Qs → Dimensions → Preferences → Review | Most impactful input first, progressive refinement |
 | Failed citation handling | Retry once, then discard + regenerate | Balance between quality and completion time |
 | Real-world question integration | Direct reuse + style guidance for generated questions | Maximizes value from user-provided data |
+| Action architecture | Two-phase WorkPool (prepare + per-doc) | Avoids Convex 10-min action timeout, enables per-doc progress reporting |
+| Low quota (totalQs < numDocs) | Skip low-priority docs | Respects user's question budget; prioritizes important docs |
+| Direct-reuse validation | Always validate via citation extraction | Embedding match ≠ answerable; ensures every output question has valid ground truth |
