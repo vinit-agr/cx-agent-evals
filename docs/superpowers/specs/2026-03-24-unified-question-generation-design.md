@@ -142,9 +142,13 @@ If `realWorldQuestions` is non-empty:
 2. Embed all passages + all real-world questions (using OpenAI `text-embedding-3-small`)
 3. For each real-world question, find the best-matching passage (cosine similarity)
 4. If score >= threshold (0.35), it's a match → assign question to that document
-5. Output: `matchedByDoc: Map<docId, {question, score}[]>` and `unmatchedQuestions: string[]` (knowledge gaps, stored as metadata)
+5. Output: `matchedByDoc: Record<docId, {question, score}[]>` and `unmatchedQuestions: string[]`
 
-If empty: skip, `matchedByDoc` is empty.
+Unmatched questions (knowledge gaps) are stored on the dataset record's `metadata.knowledgeGaps` field for later review.
+
+**Note**: `matchedByDoc` uses plain objects (not `Map`) for JSON serialization when passing between Convex actions and mutations. The `docId` here refers to the document's `docId` string field (not the Convex `_id`), consistent with how eval-lib references documents.
+
+If empty: skip, `matchedByDoc` is `{}`.
 
 **Implementation**: `matching.ts` (reuse/refactor existing `real-world-grounded/matching.ts`)
 
@@ -167,7 +171,7 @@ For each document, determine the generation scenario based on available inputs:
 | Scenario | Condition | Behavior |
 |----------|-----------|----------|
 | **1** | `matched >= quota` | Top `quota` real-world questions by score are direct-reuse candidates. LLM call extracts citations. If citation extraction fails for a direct-reuse question (not actually answerable from this doc), demote it to a style example and generate a replacement. |
-| **2** | `0 < matched < quota` | All matched → direct-reuse candidates (validated via citation extraction, demoted to style examples if citation fails). LLM generates `quota - matched` new questions with: matched as few-shot examples + dimension combos (if any) + preferences. Citations for all. |
+| **2** | `0 < matched < quota` | All matched → direct-reuse candidates (validated via citation extraction, demoted to style examples if citation fails). LLM generates `quota - matched` new questions with: matched as few-shot examples + dimension combos for diversity (if available) + preferences. Citations for all. |
 | **3** | `matched == 0`, combos available | LLM generates all `quota` questions with: dimension combos + real-world examples from other docs (if any) + preferences. |
 | **4** | `matched == 0`, no combos | LLM generates all `quota` questions with: preferences only + real-world examples from other docs (if any). Equivalent to current simple strategy. |
 
@@ -218,7 +222,7 @@ Output JSON:
 }
 ```
 
-**Concurrency**: Per-document calls run with `mapWithConcurrency(docs, fn, 5)` inside the single Convex action.
+**Concurrency**: Per-document calls run as separate WorkPool actions (parallelism controlled by WorkPool's `maxParallelism: 10`).
 
 **Large documents**: If a document exceeds 20K characters, split into chunks at paragraph boundaries with ~2K character overlap. Run separate calls per chunk, distributing the document's quota across chunks proportionally by length. No deduplication needed since each chunk has its own sub-quota. Citations are validated against the full original document (not the chunk) to ensure correct global offsets.
 
@@ -290,13 +294,13 @@ function calculateQuotas(
   const quotas = new Map<string, number>();
   let allocated = 0;
 
-  // Sort by priority descending for remainder allocation
-  const sorted = [...docs].sort((a, b) => b.priority - a.priority);
+  // Sort by priority ascending — process low-priority first, highest-priority last gets remainder
+  const sorted = [...docs].sort((a, b) => a.priority - b.priority);
 
   for (let i = 0; i < sorted.length; i++) {
     const doc = sorted[i];
     if (i === sorted.length - 1) {
-      // Last doc gets remainder
+      // Highest-priority doc gets remainder (ensures rounding favors important docs)
       quotas.set(doc.id, totalQuestions - allocated);
     } else {
       const quota = Math.round((doc.priority / totalWeight) * totalQuestions);
@@ -411,12 +415,18 @@ export const prepareGeneration = internalAction({
       ? await filterCombinations(config.dimensions, llmClient, model)
       : [];
 
-    // Store plan and update job with totalDocs
+    // Store plan and enqueue per-doc actions
+    // Note: quotas and matchedByDoc are serialized as plain objects (not Maps) for Convex mutations
     const docsWithQuota = docs.filter(d => (quotas.get(d.id) ?? 0) > 0);
     await ctx.runMutation(internal.generation.orchestration.savePlanAndEnqueueDocs, {
       jobId: args.jobId,
       datasetId: args.datasetId,
-      plan: { quotas, matchedByDoc, validCombos, config },
+      plan: {
+        quotas: Object.fromEntries(quotas),
+        matchedByDoc,  // already a plain object
+        validCombos,
+        config,
+      },
       docIds: docsWithQuota.map(d => d.id),
     });
   },
@@ -471,7 +481,12 @@ After the unified action completes successfully, fire-and-forget LangSmith datas
 
 ### Progress Reporting
 
-The single-action approach means WorkPool counters show 0/1 → 1/1. For finer-grained progress, the action calls `ctx.runMutation(internal.generation.orchestration.updateProgress, { jobId, phase, detail })` after each per-document call completes. The job record stores `currentDoc` and `docsProcessed` fields for real-time UI updates. This way, the frontend can show "Generating questions... (3/5 documents)" instead of just a spinner.
+With the two-phase WorkPool architecture, the existing `totalItems`/`processedItems` counters on `generationJobs` are repurposed:
+
+- **Phase 1 (prepare)**: `totalItems = 1`, `processedItems` increments to 1 when preparation completes
+- **Phase 2 (per-doc generation)**: `totalItems` is reset to number of documents, `processedItems` increments per completed doc
+
+The additional `totalDocs` and `docsProcessed` fields provide a stable count that doesn't reset between phases, enabling the frontend to show "Generating questions... (3/5 documents)". `currentDocName` is updated by each per-doc action for display purposes.
 
 ### Strategy Field
 
