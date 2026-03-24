@@ -142,6 +142,20 @@ export const getInternal = internalQuery({
   },
 });
 
+export const updatePriority = mutation({
+  args: {
+    documentId: v.id("documents"),
+    priority: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const { orgId } = await getAuthContext(ctx);
+    const doc = await ctx.db.get(args.documentId);
+    if (!doc || doc.orgId !== orgId) throw new Error("Document not found");
+    if (args.priority < 1 || args.priority > 5) throw new Error("Priority must be 1-5");
+    await ctx.db.patch(args.documentId, { priority: args.priority });
+  },
+});
+
 /**
  * Internal mutation: create a document from scraped content (no file upload).
  * Used by scraping actions to persist crawled pages.

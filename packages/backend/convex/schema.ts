@@ -42,6 +42,7 @@ export default defineSchema({
     metadata: v.any(),
     sourceUrl: v.optional(v.string()),
     sourceType: v.optional(v.string()),
+    priority: v.optional(v.number()),  // 1-5, default 3
     createdAt: v.number(),
   })
     .index("by_kb", ["kbId"])
@@ -148,6 +149,9 @@ export default defineSchema({
     createdBy: v.id("users"),
     createdAt: v.number(),
     completedAt: v.optional(v.number()),
+    totalDocs: v.optional(v.number()),
+    docsProcessed: v.optional(v.number()),
+    currentDocName: v.optional(v.string()),
   })
     .index("by_dataset", ["datasetId"])
     .index("by_org", ["orgId"])
